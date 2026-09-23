@@ -41,3 +41,19 @@ python3 -m http.server --directory build-web 8000
 The web command serves the build at [localhost:8000](http://localhost:8000). The web build
 preloads `assets/` and uses a viewport-filling canvas. Use `make build-macos` or `make build-web`
 when you only need the build artifact.
+
+## iOS spike
+
+The iOS spike uses raylib's SDL backend and OpenGL ES 3. It bundles `assets/` in the app and
+renders the Phase 0 scene with a shader, a sound (tap or press Space), touch feedback, and the
+first gamepad's left-stick value.
+
+Build and launch it in a booted simulator with:
+
+```sh
+make ios-simulator
+```
+
+For a physical device, open the generated Xcode project, select a signed development team, and
+run it on an iPhone. The Phase 0b exit check is a 60 fps run on both the simulator and device,
+with a touch and paired gamepad visibly updating the spike input readout.

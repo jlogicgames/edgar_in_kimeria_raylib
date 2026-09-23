@@ -1,0 +1,21 @@
+#ifndef EIK_IOS_GLES2_GL2EXT_H
+#define EIK_IOS_GLES2_GL2EXT_H
+
+/* See ios/include/GLES3/gl3.h. */
+#include <OpenGLES/ES2/glext.h>
+
+/* OpenGL ES 3 promotes GL_EXT_draw_buffers to core names. raylib 5.5 uses
+ * the extension spellings even when its ES3 renderer is selected. */
+#ifndef GL_COLOR_ATTACHMENT0_EXT
+#define GL_COLOR_ATTACHMENT0_EXT GL_COLOR_ATTACHMENT0
+#define GL_COLOR_ATTACHMENT1_EXT GL_COLOR_ATTACHMENT1
+#define GL_COLOR_ATTACHMENT2_EXT GL_COLOR_ATTACHMENT2
+#define GL_COLOR_ATTACHMENT3_EXT GL_COLOR_ATTACHMENT3
+#define GL_COLOR_ATTACHMENT4_EXT GL_COLOR_ATTACHMENT4
+#define GL_COLOR_ATTACHMENT5_EXT GL_COLOR_ATTACHMENT5
+#define GL_COLOR_ATTACHMENT6_EXT GL_COLOR_ATTACHMENT6
+#define GL_COLOR_ATTACHMENT7_EXT GL_COLOR_ATTACHMENT7
+#define glDrawBuffersEXT glDrawBuffers
+#endif
+
+#endif

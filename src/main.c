@@ -18,10 +18,56 @@ typedef struct App {
     ecs_entity_t fixed_pipeline;
     ecs_entity_t update_pipeline;
     Texture2D sprite;
+    Shader tint_shader;
+    Sound jump_sound;
+    struct {
+        int touch_count;
+        Vector2 touch_position;
+        bool gamepad_connected;
+        float gamepad_horizontal;
+    } input_frame;
+    bool shader_loaded;
+    bool sound_loaded;
     bool running;
 } App;
 
 static App app;
+
+#if defined(EIK_IOS)
+static const char tint_fragment_shader[] =
+    "#version 300 es\n"
+    "precision mediump float;\n"
+    "in vec2 fragTexCoord;\n"
+    "in vec4 fragColor;\n"
+    "uniform sampler2D texture0;\n"
+    "out vec4 finalColor;\n"
+    "void main() {\n"
+    "    vec4 color = texture(texture0, fragTexCoord) * fragColor;\n"
+    "    finalColor = vec4(color.rgb * vec3(0.75, 1.0, 0.85), color.a);\n"
+    "}\n";
+#elif defined(PLATFORM_WEB)
+static const char tint_fragment_shader[] =
+    "#version 100\n"
+    "precision mediump float;\n"
+    "varying vec2 fragTexCoord;\n"
+    "varying vec4 fragColor;\n"
+    "uniform sampler2D texture0;\n"
+    "void main() {\n"
+    "    vec4 color = texture2D(texture0, fragTexCoord) * fragColor;\n"
+    "    gl_FragColor = vec4(color.rgb * vec3(0.75, 1.0, 0.85), color.a);\n"
+    "}\n";
+#else
+static const char tint_fragment_shader[] =
+    "#version 330\n"
+    "in vec2 fragTexCoord;\n"
+    "in vec4 fragColor;\n"
+    "uniform sampler2D texture0;\n"
+    "out vec4 finalColor;\n"
+    "void main() {\n"
+    "    vec4 color = texture(texture0, fragTexCoord) * fragColor;\n"
+    "    finalColor = vec4(color.rgb * vec3(0.75, 1.0, 0.85), color.a);\n"
+    "}\n";
+#endif
 
 static void fail_asset_load(const char *path)
 {
@@ -99,9 +145,43 @@ static void initialize_world(void)
     app.update_pipeline = make_pipeline(app.world, "UpdatePipeline", app.update_phase);
 }
 
+static void update_input_frame(void)
+{
+    app.input_frame.touch_count = GetTouchPointCount();
+    app.input_frame.touch_position = (Vector2){ 0.0F, 0.0F };
+    if (app.input_frame.touch_count > 0) {
+        app.input_frame.touch_position = GetTouchPosition(0);
+    }
+    app.input_frame.gamepad_connected = IsGamepadAvailable(0);
+    app.input_frame.gamepad_horizontal = 0.0F;
+    if (app.input_frame.gamepad_connected) {
+        app.input_frame.gamepad_horizontal = GetGamepadAxisMovement(
+            0, GAMEPAD_AXIS_LEFT_X);
+    }
+}
+
+static void draw_spike_status(void)
+{
+    char input_status[160];
+
+    (void)snprintf(input_status, sizeof(input_status),
+        "Touch: %d  Gamepad: %s  Left stick: %.2f",
+        app.input_frame.touch_count,
+        app.input_frame.gamepad_connected ? "connected" : "waiting",
+        app.input_frame.gamepad_horizontal);
+    DrawText(input_status, 32, 76, 20, RAYWHITE);
+
+    if (app.input_frame.touch_count > 0) {
+        DrawCircleV(app.input_frame.touch_position, 18.0F, (Color){ 80, 230, 165, 180 });
+        DrawCircleLines((int)app.input_frame.touch_position.x,
+            (int)app.input_frame.touch_position.y, 24.0F, RAYWHITE);
+    }
+}
+
 static void tick(void)
 {
     static float accumulator = 0.0F;
+    static int previous_touch_count = 0;
     const float real_dt = GetFrameTime() > 0.25F ? 0.25F : GetFrameTime();
 
     ecs_run_pipeline(app.world, app.pre_pipeline, real_dt);
@@ -112,11 +192,23 @@ static void tick(void)
     }
     ecs_run_pipeline(app.world, app.update_pipeline, real_dt);
 
+    update_input_frame();
+    if (app.sound_loaded && (IsKeyPressed(KEY_SPACE)
+            || (app.input_frame.touch_count > 0 && previous_touch_count == 0))) {
+        PlaySound(app.jump_sound);
+    }
+    previous_touch_count = app.input_frame.touch_count;
+
     BeginDrawing();
     ClearBackground((Color){ 19, 30, 54, 255 });
+    BeginShaderMode(app.tint_shader);
     DrawTextureRec(app.sprite, (Rectangle){ 0.0F, 0.0F, 48.0F, 48.0F },
         (Vector2){ 616.0F, 336.0F }, WHITE);
+    EndShaderMode();
     DrawText("Edgard in Kimeria", 32, 32, 30, RAYWHITE);
+    DrawText("iOS spike: shader, sound, touch and gamepad", 32, 112, 18,
+        (Color){ 180, 225, 205, 255 });
+    draw_spike_status();
     EndDrawing();
 
     if (WindowShouldClose()) {
@@ -127,16 +219,23 @@ static void tick(void)
 int main(int argc, char **argv)
 {
     char *sprite_path = asset_path("images/hero/Player.png");
+    char *sound_path = asset_path("audio/jump.wav");
 
     if (!FileExists(sprite_path)) {
         fail_asset_load(sprite_path);
     }
+    if (!FileExists(sound_path)) {
+        free(sprite_path);
+        fail_asset_load(sound_path);
+    }
     if (argc == 2 && strcmp(argv[1], "--check-assets") == 0) {
         free(sprite_path);
+        free(sound_path);
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--check-scaffold") == 0) {
         free(sprite_path);
+        free(sound_path);
         initialize_world();
         ecs_run_pipeline(app.world, app.pre_pipeline, 0.0F);
         ecs_run_pipeline(app.world, app.fixed_pipeline, 0.0F);
@@ -148,17 +247,43 @@ int main(int argc, char **argv)
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "Edgard in Kimeria");
     SetTargetFPS(60);
+    InitAudioDevice();
 
     initialize_world();
     app.sprite = LoadTexture(sprite_path);
     if (app.sprite.id == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected asset: %s\n", sprite_path);
         free(sprite_path);
+        free(sound_path);
+        CloseAudioDevice();
         CloseWindow();
         ecs_fini(app.world);
         return EXIT_FAILURE;
     }
     free(sprite_path);
+    app.tint_shader = LoadShaderFromMemory(NULL, tint_fragment_shader);
+    if (app.tint_shader.id == 0U) {
+        (void)fprintf(stderr, "Edgard in Kimeria: tint shader failed to compile\n");
+        free(sound_path);
+        UnloadTexture(app.sprite);
+        CloseAudioDevice();
+        CloseWindow();
+        ecs_fini(app.world);
+        return EXIT_FAILURE;
+    }
+    app.shader_loaded = true;
+    app.jump_sound = LoadSound(sound_path);
+    free(sound_path);
+    if (app.jump_sound.frameCount == 0U) {
+        (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected jump sound\n");
+        UnloadShader(app.tint_shader);
+        UnloadTexture(app.sprite);
+        CloseAudioDevice();
+        CloseWindow();
+        ecs_fini(app.world);
+        return EXIT_FAILURE;
+    }
+    app.sound_loaded = true;
 
     app.running = true;
 #ifdef PLATFORM_WEB
@@ -167,7 +292,14 @@ int main(int argc, char **argv)
     while (app.running) {
         tick();
     }
+    if (app.sound_loaded) {
+        UnloadSound(app.jump_sound);
+    }
+    if (app.shader_loaded) {
+        UnloadShader(app.tint_shader);
+    }
     UnloadTexture(app.sprite);
+    CloseAudioDevice();
     ecs_fini(app.world);
     CloseWindow();
 #endif

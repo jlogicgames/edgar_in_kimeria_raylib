@@ -1,5 +1,12 @@
 cmake_minimum_required(VERSION 3.24)
 
+# CMake's compiler probe would otherwise try to link an unsigned iOS app before
+# this project has supplied its bundle settings. A static-library probe is the
+# normal cross-compilation-safe check and still verifies the iOS compiler.
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+endif()
+
 project(edgard_in_kimeria VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -10,13 +17,83 @@ include(FetchContent)
 # raylib 5.x, and a fixed tag keeps desktop and web builds reproducible.
 set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # Populate raylib without adding its GLFW-oriented CMake project. The iOS
+    # target below compiles the pinned source tree with the SDL backend instead.
+    set(EIK_RAYLIB_SOURCE_SUBDIR SOURCE_SUBDIR eik-source-only)
+endif()
 FetchContent_Declare(
     raylib
     GIT_REPOSITORY https://github.com/raysan5/raylib.git
     GIT_TAG 5.5
     GIT_SHALLOW TRUE
+    ${EIK_RAYLIB_SOURCE_SUBDIR}
 )
-FetchContent_MakeAvailable(raylib)
+
+# raylib's own CMake target uses GLFW on Apple platforms. The iOS spike instead
+# builds its core sources with the upstream SDL backend; keep that experiment
+# isolated so the normal desktop and web targets remain on raylib's supported
+# CMake path.
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    enable_language(OBJC)
+    FetchContent_MakeAvailable(raylib)
+
+    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+    set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    set(SDL_TEST OFF CACHE BOOL "" FORCE)
+    set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(SDL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        sdl2
+        GIT_REPOSITORY https://github.com/libsdl-org/SDL.git
+        GIT_TAG release-2.30.11
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(sdl2)
+
+    add_library(eik_raylib_ios STATIC
+        ${raylib_SOURCE_DIR}/src/raudio.c
+        ${raylib_SOURCE_DIR}/src/rcore.c
+        ${raylib_SOURCE_DIR}/src/rmodels.c
+        ${raylib_SOURCE_DIR}/src/rshapes.c
+        ${raylib_SOURCE_DIR}/src/rtext.c
+        ${raylib_SOURCE_DIR}/src/rtextures.c
+        ${raylib_SOURCE_DIR}/src/utils.c
+    )
+    # miniaudio's iOS backend imports AVFoundation declarations. The game and
+    # all other raylib core sources remain C99; only this upstream bridge needs
+    # Objective-C parsing on Apple platforms.
+    set_source_files_properties(${raylib_SOURCE_DIR}/src/raudio.c PROPERTIES
+        LANGUAGE OBJC
+    )
+    target_compile_definitions(eik_raylib_ios PRIVATE
+        PLATFORM_DESKTOP_SDL
+        GRAPHICS_API_OPENGL_ES3
+    )
+    target_include_directories(eik_raylib_ios
+        PUBLIC ${raylib_SOURCE_DIR}/src
+        PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/ios/include
+            ${sdl2_SOURCE_DIR}/include
+    )
+    find_library(EIK_OPENGL_ES_FRAMEWORK OpenGLES REQUIRED)
+    find_library(EIK_AUDIO_TOOLBOX_FRAMEWORK AudioToolbox REQUIRED)
+    find_library(EIK_AV_FOUNDATION_FRAMEWORK AVFoundation REQUIRED)
+    find_library(EIK_CORE_AUDIO_FRAMEWORK CoreAudio REQUIRED)
+    find_library(EIK_CORE_VIDEO_FRAMEWORK CoreVideo REQUIRED)
+    target_link_libraries(eik_raylib_ios PRIVATE
+        SDL2::SDL2-static
+        ${EIK_OPENGL_ES_FRAMEWORK}
+        ${EIK_AUDIO_TOOLBOX_FRAMEWORK}
+        ${EIK_AV_FOUNDATION_FRAMEWORK}
+        ${EIK_CORE_AUDIO_FRAMEWORK}
+        ${EIK_CORE_VIDEO_FRAMEWORK}
+    )
+    set(EIK_RAYLIB_TARGET eik_raylib_ios)
+else()
+    FetchContent_MakeAvailable(raylib)
+    set(EIK_RAYLIB_TARGET raylib)
+endif()
 
 add_library(flecs STATIC third_party/flecs/flecs.c)
 target_compile_definitions(flecs PUBLIC FLECS_CUSTOM_BUILD FLECS_SYSTEM FLECS_PIPELINE FLECS_LOG)
@@ -26,8 +103,12 @@ target_include_directories(flecs SYSTEM PUBLIC third_party/flecs)
 add_library(yxml STATIC third_party/yxml/yxml.c)
 target_include_directories(yxml SYSTEM PUBLIC third_party/yxml)
 
-add_executable(edgard_in_kimeria src/main.c)
-target_link_libraries(edgard_in_kimeria PRIVATE raylib flecs yxml)
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_executable(edgard_in_kimeria MACOSX_BUNDLE src/main.c)
+else()
+    add_executable(edgard_in_kimeria src/main.c)
+endif()
+target_link_libraries(edgard_in_kimeria PRIVATE ${EIK_RAYLIB_TARGET} flecs yxml)
 target_include_directories(edgard_in_kimeria PRIVATE src)
 set_target_properties(edgard_in_kimeria PROPERTIES
     C_STANDARD 99
@@ -38,11 +119,43 @@ set_target_properties(edgard_in_kimeria PROPERTIES
 # The desktop executable resolves assets relative to its own directory. Keep a
 # copy beside it for local runs and CTest while the web build preloads the same
 # source directory directly (below).
-add_custom_command(TARGET edgard_in_kimeria POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_CURRENT_SOURCE_DIR}/assets
-        $<TARGET_FILE_DIR:edgard_in_kimeria>/assets
-)
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set_target_properties(edgard_in_kimeria PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
+        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
+    set(EIK_BUNDLE_ASSETS)
+    file(GLOB_RECURSE EIK_ASSET_FILES CONFIGURE_DEPENDS
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets/*
+    )
+    foreach (asset IN LISTS EIK_ASSET_FILES)
+        if (NOT IS_DIRECTORY ${asset})
+            file(RELATIVE_PATH asset_relative ${CMAKE_CURRENT_SOURCE_DIR}/assets ${asset})
+            set_source_files_properties(${asset} PROPERTIES
+                MACOSX_PACKAGE_LOCATION Resources/assets/${asset_relative}
+            )
+            list(APPEND EIK_BUNDLE_ASSETS ${asset})
+        endif()
+    endforeach()
+    set_source_files_properties(ios/LaunchScreen.storyboard PROPERTIES
+        MACOSX_PACKAGE_LOCATION Resources
+    )
+    target_sources(edgard_in_kimeria PRIVATE
+        ${EIK_BUNDLE_ASSETS}
+        ios/LaunchScreen.storyboard
+    )
+    target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS=1)
+else()
+    # The desktop executable resolves assets relative to its own directory. Keep a
+    # copy beside it for local runs and CTest while the web build preloads the same
+    # source directory directly (below).
+    add_custom_command(TARGET edgard_in_kimeria POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            ${CMAKE_CURRENT_SOURCE_DIR}/assets
+            $<TARGET_FILE_DIR:edgard_in_kimeria>/assets
+    )
+endif()
 
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(edgard_in_kimeria PRIVATE -Wall -Wextra -Wpedantic -Werror)

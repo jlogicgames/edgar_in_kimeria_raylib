@@ -23,3 +23,13 @@ jobs:
         run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
       - name: Build web target
         run: cmake --build build-web --config Release --parallel 2
+  ios-simulator:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native tools
+        run: brew install cmake
+      - name: Configure iOS simulator build
+        run: cmake -S . -B build-ios-simulator -G Xcode -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphonesimulator -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_BUILD_TYPE=Debug
+      - name: Build unsigned iOS simulator app
+        run: cmake --build build-ios-simulator --config Debug --parallel 2

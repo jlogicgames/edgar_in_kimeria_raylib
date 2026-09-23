@@ -397,6 +397,8 @@ platforms before any gameplay code depends on them.
 3. **Check:** all tests pass under `ctest`.
 
 ### Phase 2: Level loading, tilemap, camera
+**Status:** Complete.
+
 1. `tmx.c` built on yxml (L1, L2, L3 with offsets honoured), and `test_tmx.c` asserting the
    object counts, classes and spawn order of both maps.
 2. `mod_level.c`: spawn by class (L4, L5), collision blocks with `SpawnIndex`, map size,

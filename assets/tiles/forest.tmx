@@ -28,7 +28,7 @@
 42,43,44,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,63,64
 </data>
  </layer>
- <objectgroup id="2" name="SpawnPoints" offsetx="0" offsety="-16">
+ <objectgroup id="2" name="SpawnPoints">
   <object id="3" name="Player" type="Player" x="65.006" y="270.811" width="48.8845" height="48.8845"/>
   <object id="16" name="YellowMob" type="YellowMob" x="784" y="288" width="48" height="32">
    <properties>

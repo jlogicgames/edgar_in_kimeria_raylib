@@ -3,7 +3,9 @@
 #include <string.h>
 
 #include "flecs.h"
+#include "mod_level.h"
 #include "raylib.h"
+#include "render.h"
 
 #if defined(EIK_IOS)
 #include <SDL2/SDL.h>
@@ -34,6 +36,9 @@ typedef struct App {
     } input_frame;
     bool shader_loaded;
     bool sound_loaded;
+    EikLevelState level;
+    EikRenderer renderer;
+    bool show_collision;
     bool running;
 } App;
 
@@ -149,6 +154,7 @@ static void initialize_world(void)
     app.pre_pipeline = make_pipeline(app.world, "PrePipeline", app.pre_phase);
     app.fixed_pipeline = make_pipeline(app.world, "FixedPipeline", app.fixed_phase);
     app.update_pipeline = make_pipeline(app.world, "UpdatePipeline", app.update_phase);
+    eik_level_register(app.world);
 }
 
 static void update_input_frame(void)
@@ -163,24 +169,6 @@ static void update_input_frame(void)
     if (app.input_frame.gamepad_connected) {
         app.input_frame.gamepad_horizontal = GetGamepadAxisMovement(
             0, GAMEPAD_AXIS_LEFT_X);
-    }
-}
-
-static void draw_spike_status(void)
-{
-    char input_status[160];
-
-    (void)snprintf(input_status, sizeof(input_status),
-        "Touch: %d  Gamepad: %s  Left stick: %.2f",
-        app.input_frame.touch_count,
-        app.input_frame.gamepad_connected ? "connected" : "waiting",
-        app.input_frame.gamepad_horizontal);
-    DrawText(input_status, 32, 76, 20, RAYWHITE);
-
-    if (app.input_frame.touch_count > 0) {
-        DrawCircleV(app.input_frame.touch_position, 18.0F, (Color){ 80, 230, 165, 180 });
-        DrawCircleLines((int)app.input_frame.touch_position.x,
-            (int)app.input_frame.touch_position.y, 24.0F, RAYWHITE);
     }
 }
 
@@ -205,22 +193,11 @@ static void tick(void)
     }
     previous_touch_count = app.input_frame.touch_count;
 
-    BeginDrawing();
-    ClearBackground((Color){ 19, 30, 54, 255 });
-    BeginShaderMode(app.tint_shader);
-    DrawTextureRec(app.sprite, (Rectangle){ 0.0F, 0.0F, 48.0F, 48.0F },
-        (Vector2){ 616.0F, 336.0F }, WHITE);
-    EndShaderMode();
-    DrawText("Edgard in Kimeria", 32, 32, 30, RAYWHITE);
-#if defined(EIK_IOS_SIMULATOR)
-    DrawText("iOS simulator spike: shader, touch and gamepad", 32, 112, 18,
-        (Color){ 180, 225, 205, 255 });
-#else
-    DrawText("iOS spike: shader, sound, touch and gamepad", 32, 112, 18,
-        (Color){ 180, 225, 205, 255 });
-#endif
-    draw_spike_status();
-    EndDrawing();
+    if (IsKeyPressed(KEY_F1)) {
+        app.show_collision = !app.show_collision;
+    }
+    eik_renderer_update_camera(&app.renderer, &app.level, real_dt);
+    eik_renderer_draw(&app.renderer, &app.level, app.show_collision);
 
     if (WindowShouldClose()) {
         app.running = false;
@@ -231,6 +208,13 @@ int main(int argc, char **argv)
 {
     char *sprite_path = asset_path("images/hero/Player.png");
     char *sound_path = asset_path("audio/jump.wav");
+    char *tileset_path = asset_path("images/Tileset/Tileset.png");
+    char *sky_path = asset_path("images/background/sky.png");
+    char *level_zero_path = asset_path("tiles/forest-1.tmx");
+    char *level_one_path = asset_path("tiles/forest.tmx");
+    const char *level_path = level_zero_path;
+    size_t level_index = 0U;
+    char level_error[256];
 
     if (!FileExists(sprite_path)) {
         fail_asset_load(sprite_path);
@@ -239,20 +223,83 @@ int main(int argc, char **argv)
         free(sprite_path);
         fail_asset_load(sound_path);
     }
+    if (!FileExists(tileset_path)) {
+        free(sprite_path);
+        free(sound_path);
+        fail_asset_load(tileset_path);
+    }
+    if (!FileExists(sky_path)) {
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(level_zero_path);
+        free(level_one_path);
+        fail_asset_load(sky_path);
+    }
+    if (!FileExists(level_zero_path)) {
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_one_path);
+        fail_asset_load(level_zero_path);
+    }
+    if (!FileExists(level_one_path)) {
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        fail_asset_load(level_one_path);
+    }
     if (argc == 2 && strcmp(argv[1], "--check-assets") == 0) {
         free(sprite_path);
         free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        free(level_one_path);
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--check-scaffold") == 0) {
         free(sprite_path);
         free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        free(level_one_path);
         initialize_world();
         ecs_run_pipeline(app.world, app.pre_pipeline, 0.0F);
         ecs_run_pipeline(app.world, app.fixed_pipeline, 0.0F);
         ecs_run_pipeline(app.world, app.update_pipeline, 0.0F);
         ecs_fini(app.world);
         return EXIT_SUCCESS;
+    }
+
+    if (argc == 2 && strcmp(argv[1], "--check-level") == 0) {
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        initialize_world();
+        if (!eik_level_load(app.world, &app.level, 0U, level_zero_path,
+                level_error, sizeof(level_error))) {
+            (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+            free(level_zero_path);
+            free(level_one_path);
+            ecs_fini(app.world);
+            return EXIT_FAILURE;
+        }
+        eik_level_unload(app.world, &app.level);
+        free(level_zero_path);
+        free(level_one_path);
+        ecs_fini(app.world);
+        return EXIT_SUCCESS;
+    }
+
+    if (getenv("EIK_CAPTURE_LEVEL") != NULL && strcmp(getenv("EIK_CAPTURE_LEVEL"), "1") == 0) {
+        level_path = level_one_path;
+        level_index = 1U;
     }
 
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
@@ -263,6 +310,44 @@ int main(int argc, char **argv)
 #endif
 
     initialize_world();
+    if (!eik_level_load(app.world, &app.level, level_index, level_path,
+            level_error, sizeof(level_error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        free(level_one_path);
+#if !defined(EIK_IOS_SIMULATOR)
+        CloseAudioDevice();
+#endif
+        CloseWindow();
+        ecs_fini(app.world);
+        return EXIT_FAILURE;
+    }
+    eik_renderer_snap_camera(&app.renderer);
+    if (!eik_renderer_init(&app.renderer, tileset_path, sky_path,
+            level_error, sizeof(level_error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+        eik_level_unload(app.world, &app.level);
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        free(level_one_path);
+#if !defined(EIK_IOS_SIMULATOR)
+        CloseAudioDevice();
+#endif
+        CloseWindow();
+        ecs_fini(app.world);
+        return EXIT_FAILURE;
+    }
+    free(tileset_path);
+    free(sky_path);
+    free(level_zero_path);
+    free(level_one_path);
     app.sprite = LoadTexture(sprite_path);
     if (app.sprite.id == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected asset: %s\n", sprite_path);
@@ -321,6 +406,8 @@ int main(int argc, char **argv)
         UnloadShader(app.tint_shader);
     }
     UnloadTexture(app.sprite);
+    eik_renderer_unload(&app.renderer);
+    eik_level_unload(app.world, &app.level);
 #if !defined(EIK_IOS_SIMULATOR)
     CloseAudioDevice();
 #endif

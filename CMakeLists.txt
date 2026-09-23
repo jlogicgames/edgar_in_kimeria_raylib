@@ -107,6 +107,14 @@ add_library(eik_collision STATIC src/collision.c)
 target_link_libraries(eik_collision PUBLIC ${EIK_RAYLIB_TARGET})
 target_include_directories(eik_collision PUBLIC src)
 
+add_library(eik_level STATIC
+    src/tmx.c
+    src/mod_level.c
+    src/render.c
+)
+target_link_libraries(eik_level PUBLIC ${EIK_RAYLIB_TARGET} flecs yxml)
+target_include_directories(eik_level PUBLIC src)
+
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_executable(edgard_in_kimeria MACOSX_BUNDLE
         src/main.c
@@ -115,7 +123,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
 else()
     add_executable(edgard_in_kimeria src/main.c)
 endif()
-target_link_libraries(edgard_in_kimeria PRIVATE ${EIK_RAYLIB_TARGET} flecs yxml)
+target_link_libraries(edgard_in_kimeria PRIVATE eik_level)
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     # SDL supplies the UIKit application entry point, which in turn calls the
     # SDL_main symbol produced by including SDL.h in src/main.c.
@@ -183,6 +191,7 @@ endif()
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(edgard_in_kimeria PRIVATE -Wall -Wextra -Wpedantic -Werror)
     target_compile_options(eik_collision PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(eik_level PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 if (EMSCRIPTEN)
@@ -204,4 +213,9 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
         target_compile_options(test_collision PRIVATE -Wall -Wextra -Wpedantic -Werror)
     endif()
     add_test(NAME collision COMMAND test_collision)
+    add_executable(test_tmx tests/test_tmx.c)
+    target_link_libraries(test_tmx PRIVATE eik_level)
+    target_compile_options(test_tmx PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME tmx COMMAND test_tmx ${CMAKE_CURRENT_SOURCE_DIR}/assets/tiles
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/offset.tmx)
 endif()

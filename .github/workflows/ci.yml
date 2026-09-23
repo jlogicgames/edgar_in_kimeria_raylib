@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native tools
+        run: brew install cmake
+      - name: Configure macOS build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - name: Build macOS target
+        run: cmake --build build --config Debug --parallel 2
+      - name: Run tests
+        run: ctest --test-dir build --output-on-failure -C Debug
+      - name: Set up Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+      - name: Configure web build
+        run: emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
+      - name: Build web target
+        run: cmake --build build-web --config Release --parallel 2

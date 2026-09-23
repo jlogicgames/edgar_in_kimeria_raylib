@@ -5,6 +5,14 @@ This is the C99/raylib/Flecs port of *Edgard in Kimeria*. The work is tracked in
 
 ## Run on macOS
 
+Short command:
+
+```sh
+make macos
+```
+
+Equivalent commands without Make:
+
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
@@ -16,10 +24,20 @@ set `EIK_ASSET_ROOT` to that directory (for example, `EIK_ASSET_ROOT=/path/to/as
 
 ## Build for the web
 
+Short command:
+
+```sh
+make web
+```
+
+Equivalent commands without Make:
+
 ```sh
 emcmake cmake -S . -B build-web -DCMAKE_BUILD_TYPE=Release
 cmake --build build-web
+python3 -m http.server --directory build-web 8000
 ```
 
-Serve `build-web/` with a local HTTP server. The web build preloads `assets/` and uses a
-viewport-filling canvas.
+The web command serves the build at [localhost:8000](http://localhost:8000). The web build
+preloads `assets/` and uses a viewport-filling canvas. Use `make build-macos` or `make build-web`
+when you only need the build artifact.

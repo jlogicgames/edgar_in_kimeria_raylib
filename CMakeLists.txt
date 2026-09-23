@@ -104,11 +104,23 @@ add_library(yxml STATIC third_party/yxml/yxml.c)
 target_include_directories(yxml SYSTEM PUBLIC third_party/yxml)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    add_executable(edgard_in_kimeria MACOSX_BUNDLE src/main.c)
+    add_executable(edgard_in_kimeria MACOSX_BUNDLE
+        src/main.c
+        src/platform_ios.m
+    )
 else()
     add_executable(edgard_in_kimeria src/main.c)
 endif()
 target_link_libraries(edgard_in_kimeria PRIVATE ${EIK_RAYLIB_TARGET} flecs yxml)
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    # SDL supplies the UIKit application entry point, which in turn calls the
+    # SDL_main symbol produced by including SDL.h in src/main.c.
+    target_link_libraries(edgard_in_kimeria PRIVATE SDL2::SDL2main)
+    target_include_directories(edgard_in_kimeria PRIVATE
+        ${sdl2_BINARY_DIR}/include/SDL2
+        ${sdl2_BINARY_DIR}/include-config-$<LOWER_CASE:$<CONFIG>>/SDL2
+    )
+endif()
 target_include_directories(edgard_in_kimeria PRIVATE src)
 set_target_properties(edgard_in_kimeria PROPERTIES
     C_STANDARD 99
@@ -122,7 +134,7 @@ set_target_properties(edgard_in_kimeria PROPERTIES
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     set_target_properties(edgard_in_kimeria PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
-        XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.jlogicgames.edgard-in-kimeria"
         XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     )
     set(EIK_BUNDLE_ASSETS)
@@ -132,8 +144,9 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     foreach (asset IN LISTS EIK_ASSET_FILES)
         if (NOT IS_DIRECTORY ${asset})
             file(RELATIVE_PATH asset_relative ${CMAKE_CURRENT_SOURCE_DIR}/assets ${asset})
+            get_filename_component(asset_directory ${asset_relative} DIRECTORY)
             set_source_files_properties(${asset} PROPERTIES
-                MACOSX_PACKAGE_LOCATION Resources/assets/${asset_relative}
+                MACOSX_PACKAGE_LOCATION Resources/assets/${asset_directory}
             )
             list(APPEND EIK_BUNDLE_ASSETS ${asset})
         endif()
@@ -146,6 +159,12 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ios/LaunchScreen.storyboard
     )
     target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS=1)
+    if (CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
+        set_target_properties(edgard_in_kimeria PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
+        )
+        target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS_SIMULATOR=1)
+    endif()
 else()
     # The desktop executable resolves assets relative to its own directory. Keep a
     # copy beside it for local runs and CTest while the web build preloads the same

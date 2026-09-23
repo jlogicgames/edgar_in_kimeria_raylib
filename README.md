@@ -46,14 +46,22 @@ when you only need the build artifact.
 
 The iOS spike uses raylib's SDL backend and OpenGL ES 3. It bundles `assets/` in the app and
 renders the Phase 0 scene with a shader, a sound (tap or press Space), touch feedback, and the
-first gamepad's left-stick value.
+first gamepad's left-stick value. The current iOS Simulator CoreAudio service deadlocks during
+raylib audio initialization, so simulator builds leave audio disabled; the sound check is run on
+the physical iPhone acceptance target.
 
-Build and launch it in a booted simulator with:
+Build it for an Apple-silicon iOS Simulator with:
 
 ```sh
-make ios-simulator
+cmake -S . -B build-ios-simulator -G Xcode \
+  -DCMAKE_SYSTEM_NAME=iOS \
+  -DCMAKE_OSX_SYSROOT=iphonesimulator \
+  -DCMAKE_OSX_ARCHITECTURES=arm64 \
+  -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-ios-simulator --config Debug
 ```
 
-For a physical device, open the generated Xcode project, select a signed development team, and
-run it on an iPhone. The Phase 0b exit check is a 60 fps run on both the simulator and device,
-with a touch and paired gamepad visibly updating the spike input readout.
+For a physical device, generate the project with `-DCMAKE_OSX_SYSROOT=iphoneos`, open the Xcode
+project, select a signed development team, and run it on an iPhone. The Phase 0b exit check is a
+60 fps run on both the simulator and device, with a touch and paired gamepad visibly updating the
+spike input readout.

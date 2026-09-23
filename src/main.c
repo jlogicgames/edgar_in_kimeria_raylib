@@ -5,6 +5,12 @@
 #include "flecs.h"
 #include "raylib.h"
 
+#if defined(EIK_IOS)
+#include <SDL2/SDL.h>
+
+void eik_ios_start_frame_loop(void *sdl_window, void (*frame)(void));
+#endif
+
 #ifdef PLATFORM_WEB
 #include <emscripten/emscripten.h>
 #endif
@@ -206,8 +212,13 @@ static void tick(void)
         (Vector2){ 616.0F, 336.0F }, WHITE);
     EndShaderMode();
     DrawText("Edgard in Kimeria", 32, 32, 30, RAYWHITE);
+#if defined(EIK_IOS_SIMULATOR)
+    DrawText("iOS simulator spike: shader, touch and gamepad", 32, 112, 18,
+        (Color){ 180, 225, 205, 255 });
+#else
     DrawText("iOS spike: shader, sound, touch and gamepad", 32, 112, 18,
         (Color){ 180, 225, 205, 255 });
+#endif
     draw_spike_status();
     EndDrawing();
 
@@ -247,7 +258,9 @@ int main(int argc, char **argv)
     SetConfigFlags(FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "Edgard in Kimeria");
     SetTargetFPS(60);
+#if !defined(EIK_IOS_SIMULATOR)
     InitAudioDevice();
+#endif
 
     initialize_world();
     app.sprite = LoadTexture(sprite_path);
@@ -255,7 +268,9 @@ int main(int argc, char **argv)
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected asset: %s\n", sprite_path);
         free(sprite_path);
         free(sound_path);
+#if !defined(EIK_IOS_SIMULATOR)
         CloseAudioDevice();
+#endif
         CloseWindow();
         ecs_fini(app.world);
         return EXIT_FAILURE;
@@ -266,16 +281,19 @@ int main(int argc, char **argv)
         (void)fprintf(stderr, "Edgard in Kimeria: tint shader failed to compile\n");
         free(sound_path);
         UnloadTexture(app.sprite);
+#if !defined(EIK_IOS_SIMULATOR)
         CloseAudioDevice();
+#endif
         CloseWindow();
         ecs_fini(app.world);
         return EXIT_FAILURE;
     }
     app.shader_loaded = true;
+#if !defined(EIK_IOS_SIMULATOR)
     app.jump_sound = LoadSound(sound_path);
-    free(sound_path);
     if (app.jump_sound.frameCount == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected jump sound\n");
+        free(sound_path);
         UnloadShader(app.tint_shader);
         UnloadTexture(app.sprite);
         CloseAudioDevice();
@@ -284,9 +302,13 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     app.sound_loaded = true;
+#endif
+    free(sound_path);
 
     app.running = true;
-#ifdef PLATFORM_WEB
+#if defined(EIK_IOS)
+    eik_ios_start_frame_loop(GetWindowHandle(), tick);
+#elif defined(PLATFORM_WEB)
     emscripten_set_main_loop(tick, 0, 1);
 #else
     while (app.running) {
@@ -299,7 +321,9 @@ int main(int argc, char **argv)
         UnloadShader(app.tint_shader);
     }
     UnloadTexture(app.sprite);
+#if !defined(EIK_IOS_SIMULATOR)
     CloseAudioDevice();
+#endif
     ecs_fini(app.world);
     CloseWindow();
 #endif

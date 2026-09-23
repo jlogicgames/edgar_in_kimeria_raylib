@@ -362,6 +362,8 @@ Each phase leaves something runnable and ends with a named check. Phase 0 proves
 platforms before any gameplay code depends on them.
 
 ### Phase 0a: Scaffold (macOS, web)
+**Status:** Complete.
+
 1. CMake project; raylib 5.5 via `FetchContent`; vendored Flecs (custom build) and yxml;
    warning flags as in 1.2.
 2. `main.c`: a Flecs world, three empty pipelines, the frame loop from 2.2, and a
@@ -374,6 +376,8 @@ platforms before any gameplay code depends on them.
 5. **Check:** CI green; the sprite shows on macOS and in the browser.
 
 ### Phase 0b: iOS spike (section 1.4)
+**Status:** Implementation complete; physical-device acceptance remains pending.
+
 1. raylib's SDL backend with `GRAPHICS_API_OPENGL_ES3`, built for iOS from CMake's Xcode
    generator; an `.app` bundle with `assets/` as resources.
 2. The Phase 0a scene plus one shader, one sound, a touch point and a gamepad reading.
@@ -382,6 +386,8 @@ platforms before any gameplay code depends on them.
    Route B; if both fail, stop and re-plan.
 
 ### Phase 1: Collision core and tests
+**Status:** Complete.
+
 1. Port `core/collision.rs` into `collision.c` function for function: `overlaps`,
    `hitbox_left_x`, `resolve_horizontal`, `apply_gravity`, `resolve_vertical` (with its
    `VerticalOutcome`), and `mirrored_pos`. Apply the O10 fix here, and the P13 unit change.

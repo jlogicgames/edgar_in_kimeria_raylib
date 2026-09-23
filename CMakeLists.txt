@@ -103,6 +103,10 @@ target_include_directories(flecs SYSTEM PUBLIC third_party/flecs)
 add_library(yxml STATIC third_party/yxml/yxml.c)
 target_include_directories(yxml SYSTEM PUBLIC third_party/yxml)
 
+add_library(eik_collision STATIC src/collision.c)
+target_link_libraries(eik_collision PUBLIC ${EIK_RAYLIB_TARGET})
+target_include_directories(eik_collision PUBLIC src)
+
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_executable(edgard_in_kimeria MACOSX_BUNDLE
         src/main.c
@@ -178,6 +182,7 @@ endif()
 
 if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
     target_compile_options(edgard_in_kimeria PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    target_compile_options(eik_collision PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 if (EMSCRIPTEN)
@@ -192,3 +197,11 @@ endif()
 
 enable_testing()
 add_test(NAME scaffold_starts COMMAND edgard_in_kimeria --check-scaffold)
+if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    add_executable(test_collision tests/test_collision.c)
+    target_link_libraries(test_collision PRIVATE eik_collision)
+    if (CMAKE_C_COMPILER_ID MATCHES "Clang|GNU")
+        target_compile_options(test_collision PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    endif()
+    add_test(NAME collision COMMAND test_collision)
+endif()

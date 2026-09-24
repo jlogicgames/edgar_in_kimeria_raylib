@@ -460,6 +460,9 @@ remain pending.
    mutes it and backgrounding pauses it.
 
 ### Phase 8: UI, menus, localization, HUD
+**Status:** Implementation complete; manual keyboard/gamepad/touch walkthrough and iOS
+safe-area acceptance remain pending.
+
 1. `l10n.c` (U11, U14) and font loading with Cyrillic codepoints (U10).
 2. Immediate-mode widgets with focus, eased scale and entrance animation (U7–U9), drawn
    inside the safe area (R8).

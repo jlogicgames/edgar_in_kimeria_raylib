@@ -11,6 +11,7 @@
 #include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
+#include "ui.h"
 
 #if defined(EIK_IOS)
 #include <SDL2/SDL.h>
@@ -46,11 +47,23 @@ typedef struct App {
     bool shader_loaded;
     EikLevelState level;
     EikRenderer renderer;
+    EikUi ui;
     bool show_collision;
     bool running;
 } App;
 
 static App app;
+
+static void app_set_state(EikAppState state)
+{
+    eik_ui_set_state(&app.ui, state);
+    if (state == EIK_APP_MAIN_MENU || state == EIK_APP_ABOUT || state == EIK_APP_OPTIONS) {
+        eik_audio_set_state(&app.audio, state == EIK_APP_ABOUT ? EIK_AUDIO_ABOUT
+            : state == EIK_APP_OPTIONS ? EIK_AUDIO_OPTIONS : EIK_AUDIO_MAIN_MENU);
+    } else if (state == EIK_APP_PLAYING) {
+        eik_audio_set_state(&app.audio, EIK_AUDIO_PLAYING);
+    }
+}
 
 #if defined(EIK_IOS)
 static void pause_audio(void)
@@ -265,6 +278,46 @@ static bool advance_level(void)
     return true;
 }
 
+static bool start_new_run(void)
+{
+    char error[256];
+
+    if (!eik_level_load(app.world, &app.level, 0U, app.level_paths[0], error, sizeof(error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", error);
+        return false;
+    }
+    app.progress = (EikGameProgress){ .lives = 3, .current_level = 0U };
+    eik_player_spawn(&app.player, app.level.player_position);
+    app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
+    eik_enemy_world_load(app.world, &app.enemies, &app.level);
+    eik_items_world_load(app.world, &app.items, &app.level);
+    eik_renderer_snap_camera(&app.renderer);
+    app_set_state(EIK_APP_PLAYING);
+    return true;
+}
+
+static void handle_ui_action(EikUiAction action)
+{
+    switch (action) {
+        case EIK_UI_ACTION_PLAY:
+            if (!start_new_run()) {
+                app.running = false;
+            }
+            break;
+        case EIK_UI_ACTION_RESUME:
+            app_set_state(EIK_APP_PLAYING);
+            break;
+        case EIK_UI_ACTION_EXIT_TO_MENU:
+            app_set_state(EIK_APP_MAIN_MENU);
+            break;
+        case EIK_UI_ACTION_QUIT:
+            app.running = false;
+            break;
+        case EIK_UI_ACTION_NONE:
+            break;
+    }
+}
+
 static void tick(void)
 {
     static float accumulator = 0.0F;
@@ -277,18 +330,24 @@ static void tick(void)
     const EikPlayerRoutine routine_before = app.player.routine;
 
     app.input_frame = eik_input_read();
-    app.game_time.time_scale = eik_enemy_time_scale(&app.enemies, &app.player);
+    if (app.ui.state == EIK_APP_PLAYING && app.input_frame.pause_pressed) {
+        app_set_state(EIK_APP_PAUSED);
+    }
+    app.game_time.time_scale = app.ui.state == EIK_APP_PLAYING
+        ? eik_enemy_time_scale(&app.enemies, &app.player) : 0.0F;
     eik_game_time_begin_frame(&app.game_time, raw_dt);
-    if (app.input_frame.pause_pressed) {
-        app.running = false;
+    if (app.ui.state != EIK_APP_PLAYING) {
+        handle_ui_action(eik_ui_update(&app.ui, app.game_time.real_dt));
     }
     ecs_run_pipeline(app.world, app.pre_pipeline, app.game_time.real_dt);
-    eik_items_virtual_step(&app.items, app.game_time.virtual_dt);
+    if (app.ui.state == EIK_APP_PLAYING) {
+        eik_items_virtual_step(&app.items, app.game_time.virtual_dt);
+    }
     world = collision_snapshot(&app.level, &app.items, blocks, sizeof(blocks) / sizeof(blocks[0]),
         escalators, sizeof(escalators) / sizeof(escalators[0]), falling_platforms,
         sizeof(falling_platforms) / sizeof(falling_platforms[0]));
     accumulator += app.game_time.virtual_dt;
-    while (accumulator >= app.game_time.fixed_dt) {
+    while (app.ui.state == EIK_APP_PLAYING && accumulator >= app.game_time.fixed_dt) {
         const float velocity_before = app.player.velocity.y;
         const EIKVerticalOutcome outcome = eik_player_fixed_step(&app.player, &app.progress,
             &app.input_frame, &world, app.game_time.fixed_dt);
@@ -306,9 +365,11 @@ static void tick(void)
         ecs_run_pipeline(app.world, app.fixed_pipeline, app.game_time.fixed_dt);
         accumulator -= app.game_time.fixed_dt;
     }
-    eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
-    eik_enemy_update(app.world, &app.enemies, app.game_time.real_dt);
-    eik_items_contact_step(app.world, &app.items, &app.player, &app.progress);
+    if (app.ui.state == EIK_APP_PLAYING) {
+        eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
+        eik_enemy_update(app.world, &app.enemies, app.game_time.real_dt);
+        eik_items_contact_step(app.world, &app.items, &app.player, &app.progress);
+    }
     {
         size_t effect_index = 0U;
 
@@ -323,21 +384,25 @@ static void tick(void)
             }
         }
     }
-    if (routine_before == EIK_PLAYER_ACTIVE && app.player.routine == EIK_PLAYER_DYING) {
+    if (app.ui.state == EIK_APP_PLAYING && routine_before == EIK_PLAYER_ACTIVE
+            && app.player.routine == EIK_PLAYER_DYING) {
         eik_audio_play(&app.audio, EIK_AUDIO_HIT);
     } else if (routine_before == EIK_PLAYER_ACTIVE
             && app.player.routine == EIK_PLAYER_LEAVING_LEVEL) {
         eik_audio_play(&app.audio, EIK_AUDIO_DISAPPEAR);
     }
-    if (app.input_frame.interact_pressed) {
+    if (app.ui.state == EIK_APP_PLAYING && app.input_frame.interact_pressed) {
         eik_items_activate_trigger(app.world, &app.items);
     }
-    if (app.player.routine == EIK_PLAYER_LEAVING_LEVEL
+    if (app.ui.state == EIK_APP_PLAYING && app.player.routine == EIK_PLAYER_LEAVING_LEVEL
             && app.player.routine_elapsed >= 3.0F && !advance_level()) {
         app.running = false;
     }
     app.level.player_position = app.player.position;
     app.level.has_player = !app.progress.game_over;
+    if (app.ui.state == EIK_APP_PLAYING && app.progress.game_over) {
+        app_set_state(EIK_APP_GAME_OVER);
+    }
     ecs_run_pipeline(app.world, app.update_pipeline, app.game_time.real_dt);
 
     if (IsKeyPressed(KEY_F1)) {
@@ -352,8 +417,9 @@ static void tick(void)
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
     eik_renderer_update_effects(&app.renderer, &app.level, &app.items, app.game_time.real_dt);
     eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
-        app.sprite,
-        app.show_collision);
+        app.sprite, app.show_collision);
+    eik_ui_draw(&app.ui, app.progress.coins_collected, app.progress.lives);
+    EndDrawing();
     eik_audio_update(&app.audio, app.game_time.real_dt);
 
     if (WindowShouldClose()) {
@@ -649,6 +715,37 @@ int main(int argc, char **argv)
 #endif
     free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
         button_click_path, menu_music_path);
+    {
+        char *text_font_path = asset_path("fonts/QuestSquare.ttf");
+        char *button_font_path = asset_path("fonts/NanoPlus.ttf");
+        char *items_path = asset_path("images/Items.png");
+
+        if (!FileExists(text_font_path) || !FileExists(button_font_path) || !FileExists(items_path)
+                || !eik_ui_init(&app.ui, text_font_path, button_font_path, items_path,
+                    level_error, sizeof(level_error))) {
+            (void)fprintf(stderr, "Edgard in Kimeria: cannot load UI fonts\n");
+            free(text_font_path);
+            free(button_font_path);
+            free(items_path);
+            eik_audio_unload(&app.audio);
+            UnloadShader(app.tint_shader);
+            UnloadTexture(app.sprite);
+            eik_renderer_unload(&app.renderer);
+            eik_level_unload(app.world, &app.level);
+            free(level_zero_path);
+            free(level_one_path);
+#if !defined(EIK_IOS_SIMULATOR)
+            CloseAudioDevice();
+#endif
+            ecs_fini(app.world);
+            CloseWindow();
+            return EXIT_FAILURE;
+        }
+        free(text_font_path);
+        free(button_font_path);
+        free(items_path);
+    }
+    app_set_state(EIK_APP_MAIN_MENU);
 
     app.running = true;
 #if defined(EIK_IOS)
@@ -659,6 +756,7 @@ int main(int argc, char **argv)
     while (app.running) {
         tick();
     }
+    eik_ui_unload(&app.ui);
     eik_audio_unload(&app.audio);
     if (app.shader_loaded) {
         UnloadShader(app.tint_shader);

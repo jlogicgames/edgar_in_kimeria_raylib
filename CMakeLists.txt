@@ -113,6 +113,8 @@ add_library(eik_level STATIC
     src/render.c
     src/input.c
     src/audio.c
+    src/l10n.c
+    src/ui.c
     src/anim.c
     src/mod_player.c
     src/mod_enemy.c
@@ -177,6 +179,7 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
         ios/LaunchScreen.storyboard
     )
     target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS=1)
+    target_compile_definitions(eik_level PUBLIC EIK_IOS=1)
     if (CMAKE_OSX_SYSROOT MATCHES "iphonesimulator")
         set_target_properties(edgard_in_kimeria PROPERTIES
             XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"
@@ -236,4 +239,8 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_link_libraries(test_triggers PRIVATE eik_level)
     target_compile_options(test_triggers PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME triggers COMMAND test_triggers)
+    add_executable(test_l10n tests/test_l10n.c)
+    target_link_libraries(test_l10n PRIVATE eik_level)
+    target_compile_options(test_l10n PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME l10n COMMAND test_l10n)
 endif()

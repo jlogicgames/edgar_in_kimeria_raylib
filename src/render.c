@@ -852,5 +852,4 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     if (show_collision) {
         DrawText("F1 collision boxes", (int)view_x + 12, (int)view_y + 28, 12, GREEN);
     }
-    EndDrawing();
 }

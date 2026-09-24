@@ -3,6 +3,8 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
 
+#include "touch.h"
+
 typedef void (*EIKFrameCallback)(void);
 typedef void (*EIKAudioLifecycleCallback)(void);
 
@@ -146,4 +148,29 @@ void eik_ios_set_audio_lifecycle_callbacks(EIKAudioLifecycleCallback pause_callb
         queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
             audio_session_did_become_active(notification);
         }];
+}
+
+EikTouchSafeArea eik_ios_safe_area(void *sdl_window)
+{
+    SDL_SysWMinfo window_info;
+    EikTouchSafeArea safe_area = { 0.0F, 0.0F, 0.0F, 0.0F };
+
+    if (sdl_window == NULL) {
+        return safe_area;
+    }
+    SDL_VERSION(&window_info.version);
+    if (SDL_GetWindowWMInfo((SDL_Window *)sdl_window, &window_info) == SDL_FALSE
+            || window_info.subsystem != SDL_SYSWM_UIKIT
+            || window_info.info.uikit.window == nil) {
+        return safe_area;
+    }
+    {
+        const UIEdgeInsets insets = window_info.info.uikit.window.safeAreaInsets;
+
+        safe_area.left = (float)insets.left;
+        safe_area.top = (float)insets.top;
+        safe_area.right = (float)insets.right;
+        safe_area.bottom = (float)insets.bottom;
+    }
+    return safe_area;
 }

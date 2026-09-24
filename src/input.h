@@ -14,4 +14,7 @@ typedef struct EikInputFrame {
 /* Reads every supported physical control, then applies EIK_CAPTURE_INPUT. */
 EikInputFrame eik_input_read(void);
 
+/* True when any of the supported physical gamepads is connected. */
+bool eik_input_gamepad_connected(void);
+
 #endif

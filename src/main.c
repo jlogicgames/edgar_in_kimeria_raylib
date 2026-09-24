@@ -11,6 +11,7 @@
 #include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
+#include "touch.h"
 #include "ui.h"
 
 #if defined(EIK_IOS)
@@ -20,6 +21,7 @@ void eik_ios_start_frame_loop(void *sdl_window, void (*frame)(void));
 void eik_ios_configure_audio_session(void);
 void eik_ios_set_audio_lifecycle_callbacks(void (*pause_callback)(void),
     void (*resume_callback)(void));
+EikTouchSafeArea eik_ios_safe_area(void *sdl_window);
 #endif
 
 #ifdef PLATFORM_WEB
@@ -48,6 +50,7 @@ typedef struct App {
     EikLevelState level;
     EikRenderer renderer;
     EikUi ui;
+    EikTouchControls touch;
     bool show_collision;
     bool running;
 } App;
@@ -330,6 +333,16 @@ static void tick(void)
     const EikPlayerRoutine routine_before = app.player.routine;
 
     app.input_frame = eik_input_read();
+    {
+        EikTouchSafeArea safe_area = { 0 };
+
+#if defined(EIK_IOS)
+        safe_area = eik_ios_safe_area(GetWindowHandle());
+#endif
+        eik_touch_update(&app.touch, app.ui.state == EIK_APP_PLAYING,
+            eik_input_gamepad_connected(), safe_area);
+        eik_touch_apply(&app.touch, &app.input_frame);
+    }
     if (app.ui.state == EIK_APP_PLAYING && app.input_frame.pause_pressed) {
         app_set_state(EIK_APP_PAUSED);
     }
@@ -419,6 +432,7 @@ static void tick(void)
     eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
         app.sprite, app.show_collision);
     eik_ui_draw(&app.ui, app.progress.coins_collected, app.progress.lives);
+    eik_touch_draw(&app.touch);
     EndDrawing();
     eik_audio_update(&app.audio, app.game_time.real_dt);
 
@@ -719,14 +733,26 @@ int main(int argc, char **argv)
         char *text_font_path = asset_path("fonts/QuestSquare.ttf");
         char *button_font_path = asset_path("fonts/NanoPlus.ttf");
         char *items_path = asset_path("images/Items.png");
+        char *joystick_path = asset_path("images/HUD/Joystick.png");
+        char *knob_path = asset_path("images/HUD/Knob.png");
+        char *jump_button_path = asset_path("images/HUD/JumpButton.png");
 
         if (!FileExists(text_font_path) || !FileExists(button_font_path) || !FileExists(items_path)
-                || !eik_ui_init(&app.ui, text_font_path, button_font_path, items_path,
+                || !FileExists(joystick_path) || !FileExists(knob_path)
+                || !FileExists(jump_button_path) || !eik_ui_init(&app.ui, text_font_path,
+                    button_font_path, items_path,
+                    level_error, sizeof(level_error))
+                || !eik_touch_init(&app.touch, joystick_path, knob_path, jump_button_path,
                     level_error, sizeof(level_error))) {
-            (void)fprintf(stderr, "Edgard in Kimeria: cannot load UI fonts\n");
+            (void)fprintf(stderr, "Edgard in Kimeria: cannot load UI or touch-control assets\n");
             free(text_font_path);
             free(button_font_path);
             free(items_path);
+            free(joystick_path);
+            free(knob_path);
+            free(jump_button_path);
+            eik_ui_unload(&app.ui);
+            eik_touch_unload(&app.touch);
             eik_audio_unload(&app.audio);
             UnloadShader(app.tint_shader);
             UnloadTexture(app.sprite);
@@ -744,6 +770,9 @@ int main(int argc, char **argv)
         free(text_font_path);
         free(button_font_path);
         free(items_path);
+        free(joystick_path);
+        free(knob_path);
+        free(jump_button_path);
     }
     app_set_state(EIK_APP_MAIN_MENU);
 
@@ -757,6 +786,7 @@ int main(int argc, char **argv)
         tick();
     }
     eik_ui_unload(&app.ui);
+    eik_touch_unload(&app.touch);
     eik_audio_unload(&app.audio);
     if (app.shader_loaded) {
         UnloadShader(app.tint_shader);

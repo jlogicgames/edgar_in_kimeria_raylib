@@ -473,6 +473,8 @@ safe-area acceptance remain pending.
    are 0 after Exit to Menu → Play.
 
 ### Phase 9: iOS touch controls (D10)
+**Status:** Implementation complete; physical-iPhone acceptance remains pending.
+
 1. Art: `Joystick.png`, `Knob.png` and `JumpButton.png` from the Flutter original. Attack,
    interact and pause have no art: until new art exists, draw them as `JumpButton.png`
    tinted per button with a small glyph on top (sword, hand, pause bars). New art is a

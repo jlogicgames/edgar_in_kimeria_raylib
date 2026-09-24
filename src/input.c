@@ -52,6 +52,18 @@ static float gamepad_horizontal(void)
     return (right ? 1.0F : 0.0F) - (left ? 1.0F : 0.0F);
 }
 
+bool eik_input_gamepad_connected(void)
+{
+    int pad = 0;
+
+    for (pad = 0; pad < EIK_MAX_GAMEPADS; ++pad) {
+        if (IsGamepadAvailable(pad)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void apply_capture_overlay(EikInputFrame *input)
 {
     const char *mode = getenv("EIK_CAPTURE_INPUT");

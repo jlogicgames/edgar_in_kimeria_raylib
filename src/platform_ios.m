@@ -4,6 +4,26 @@
 #include <SDL2/SDL_syswm.h>
 
 typedef void (*EIKFrameCallback)(void);
+typedef void (*EIKAudioLifecycleCallback)(void);
+
+static EIKAudioLifecycleCallback audio_pause_callback;
+static EIKAudioLifecycleCallback audio_resume_callback;
+
+static void audio_session_will_resign_active(NSNotification *notification)
+{
+    (void)notification;
+    if (audio_pause_callback != NULL) {
+        audio_pause_callback();
+    }
+}
+
+static void audio_session_did_become_active(NSNotification *notification)
+{
+    (void)notification;
+    if (audio_resume_callback != NULL) {
+        audio_resume_callback();
+    }
+}
 
 @interface EIKIOSFrameDriver : NSObject {
     void *_sdl_window;
@@ -94,4 +114,36 @@ void eik_ios_start_frame_loop(void *sdl_window, EIKFrameCallback frame_callback)
     frame_driver = [[EIKIOSFrameDriver alloc] initWithSDLWindow:sdl_window
         frameCallback:frame_callback];
     [frame_driver start];
+}
+
+void eik_ios_configure_audio_session(void)
+{
+    NSError *error = nil;
+    AVAudioSession *session = AVAudioSession.sharedInstance;
+
+    if (![session setCategory:AVAudioSessionCategoryAmbient
+            withOptions:AVAudioSessionCategoryOptionMixWithOthers error:&error]) {
+        NSLog(@"Edgard in Kimeria: could not configure ambient audio session: %@", error);
+        return;
+    }
+    if (![session setActive:YES error:&error]) {
+        NSLog(@"Edgard in Kimeria: could not activate ambient audio session: %@", error);
+    }
+}
+
+void eik_ios_set_audio_lifecycle_callbacks(EIKAudioLifecycleCallback pause_callback,
+    EIKAudioLifecycleCallback resume_callback)
+{
+    NSNotificationCenter *notifications = NSNotificationCenter.defaultCenter;
+
+    audio_pause_callback = pause_callback;
+    audio_resume_callback = resume_callback;
+    [notifications addObserverForName:UIApplicationWillResignActiveNotification object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+            audio_session_will_resign_active(notification);
+        }];
+    [notifications addObserverForName:UIApplicationDidBecomeActiveNotification object:nil
+        queue:NSOperationQueue.mainQueue usingBlock:^(NSNotification *notification) {
+            audio_session_did_become_active(notification);
+        }];
 }

@@ -112,6 +112,7 @@ add_library(eik_level STATIC
     src/mod_level.c
     src/render.c
     src/input.c
+    src/audio.c
     src/anim.c
     src/mod_player.c
     src/mod_enemy.c

@@ -451,6 +451,9 @@ local Xcode toolchain cannot find an iOS C compiler.
    the iOS simulator.
 
 ### Phase 7: Audio
+**Status:** Implementation complete; the manual desktop by-ear check and iOS device acceptance
+remain pending.
+
 1. S1–S4: the alias pool, music with fades keyed to menu states, and the iOS audio session.
 2. **Check:** by ear. Overlapping coin pickups don't cut each other off; Main → About →
    Main doesn't restart the music; Play fades it out over 1 s; on iOS the silent switch

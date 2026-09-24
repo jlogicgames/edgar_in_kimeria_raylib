@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "flecs.h"
+#include "audio.h"
 #include "input.h"
 #include "mod_level.h"
 #include "mod_enemy.h"
@@ -15,6 +16,9 @@
 #include <SDL2/SDL.h>
 
 void eik_ios_start_frame_loop(void *sdl_window, void (*frame)(void));
+void eik_ios_configure_audio_session(void);
+void eik_ios_set_audio_lifecycle_callbacks(void (*pause_callback)(void),
+    void (*resume_callback)(void));
 #endif
 
 #ifdef PLATFORM_WEB
@@ -31,7 +35,7 @@ typedef struct App {
     ecs_entity_t update_pipeline;
     Texture2D sprite;
     Shader tint_shader;
-    Sound jump_sound;
+    EikAudio audio;
     EikInputFrame input_frame;
     EikGameTime game_time;
     EikGameProgress progress;
@@ -40,7 +44,6 @@ typedef struct App {
     EikItemWorld items;
     const char *level_paths[2];
     bool shader_loaded;
-    bool sound_loaded;
     EikLevelState level;
     EikRenderer renderer;
     bool show_collision;
@@ -48,6 +51,18 @@ typedef struct App {
 } App;
 
 static App app;
+
+#if defined(EIK_IOS)
+static void pause_audio(void)
+{
+    eik_audio_pause(&app.audio);
+}
+
+static void resume_audio(void)
+{
+    eik_audio_resume(&app.audio);
+}
+#endif
 
 #if defined(EIK_IOS)
 static const char tint_fragment_shader[] =
@@ -89,6 +104,18 @@ static void fail_asset_load(const char *path)
 {
     (void)fprintf(stderr, "Edgard in Kimeria: cannot load asset: %s\n", path);
     exit(EXIT_FAILURE);
+}
+
+static void free_audio_paths(char *jump_path, char *hit_path, char *collect_path,
+    char *bounce_path, char *disappear_path, char *button_click_path, char *menu_music_path)
+{
+    free(jump_path);
+    free(hit_path);
+    free(collect_path);
+    free(bounce_path);
+    free(disappear_path);
+    free(button_click_path);
+    free(menu_music_path);
 }
 
 static char *asset_path(const char *relative_path)
@@ -247,6 +274,7 @@ static void tick(void)
     EIKSurfaceSnapshot falling_platforms[16];
     EIKCollisionWorld world;
     const float raw_dt = GetFrameTime();
+    const EikPlayerRoutine routine_before = app.player.routine;
 
     app.input_frame = eik_input_read();
     app.game_time.time_scale = eik_enemy_time_scale(&app.enemies, &app.player);
@@ -261,8 +289,14 @@ static void tick(void)
         sizeof(falling_platforms) / sizeof(falling_platforms[0]));
     accumulator += app.game_time.virtual_dt;
     while (accumulator >= app.game_time.fixed_dt) {
+        const float velocity_before = app.player.velocity.y;
         const EIKVerticalOutcome outcome = eik_player_fixed_step(&app.player, &app.progress,
             &app.input_frame, &world, app.game_time.fixed_dt);
+
+        if (velocity_before >= 0.0F && app.player.velocity.y < 0.0F
+                && app.player.routine == EIK_PLAYER_ACTIVE) {
+            eik_audio_play(&app.audio, EIK_AUDIO_JUMP);
+        }
 
         if (outcome.trigger_fall) {
             eik_items_trigger_fall(&app.items, outcome.falling_platform_id);
@@ -282,7 +316,18 @@ static void tick(void)
             const EikItemEffect *effect = &app.items.effects[effect_index];
 
             eik_renderer_emit_item_effect(&app.renderer, effect->kind, effect->centre);
+            if (effect->kind == EIK_ITEM_EFFECT_EXPLOSION) {
+                eik_audio_play(&app.audio, EIK_AUDIO_BOUNCE);
+            } else {
+                eik_audio_play(&app.audio, EIK_AUDIO_COLLECT);
+            }
         }
+    }
+    if (routine_before == EIK_PLAYER_ACTIVE && app.player.routine == EIK_PLAYER_DYING) {
+        eik_audio_play(&app.audio, EIK_AUDIO_HIT);
+    } else if (routine_before == EIK_PLAYER_ACTIVE
+            && app.player.routine == EIK_PLAYER_LEAVING_LEVEL) {
+        eik_audio_play(&app.audio, EIK_AUDIO_DISAPPEAR);
     }
     if (app.input_frame.interact_pressed) {
         eik_items_activate_trigger(app.world, &app.items);
@@ -309,6 +354,7 @@ static void tick(void)
     eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
         app.sprite,
         app.show_collision);
+    eik_audio_update(&app.audio, app.game_time.real_dt);
 
     if (WindowShouldClose()) {
         app.running = false;
@@ -318,7 +364,13 @@ static void tick(void)
 int main(int argc, char **argv)
 {
     char *sprite_path = asset_path("images/hero/Player.png");
-    char *sound_path = asset_path("audio/jump.wav");
+    char *jump_path = asset_path("audio/jump.wav");
+    char *hit_path = asset_path("audio/hit.wav");
+    char *collect_path = asset_path("audio/collect.wav");
+    char *bounce_path = asset_path("audio/bounce.wav");
+    char *disappear_path = asset_path("audio/disappear.wav");
+    char *button_click_path = asset_path("audio/button_click.wav");
+    char *menu_music_path = asset_path("audio/main_menu.mp3");
     char *tileset_path = asset_path("images/Tileset/Tileset.png");
     char *sky_path = asset_path("images/background/sky.png");
     char *bat_path = asset_path("images/enemy/Bat.png");
@@ -333,18 +385,23 @@ int main(int argc, char **argv)
     if (!FileExists(sprite_path)) {
         fail_asset_load(sprite_path);
     }
-    if (!FileExists(sound_path)) {
-        free(sprite_path);
-        fail_asset_load(sound_path);
-    }
+    if (!FileExists(jump_path)) { fail_asset_load(jump_path); }
+    if (!FileExists(hit_path)) { fail_asset_load(hit_path); }
+    if (!FileExists(collect_path)) { fail_asset_load(collect_path); }
+    if (!FileExists(bounce_path)) { fail_asset_load(bounce_path); }
+    if (!FileExists(disappear_path)) { fail_asset_load(disappear_path); }
+    if (!FileExists(button_click_path)) { fail_asset_load(button_click_path); }
+    if (!FileExists(menu_music_path)) { fail_asset_load(menu_music_path); }
     if (!FileExists(tileset_path)) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         fail_asset_load(tileset_path);
     }
     if (!FileExists(sky_path)) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(level_zero_path);
         free(level_one_path);
@@ -361,7 +418,8 @@ int main(int argc, char **argv)
     }
     if (!FileExists(level_zero_path)) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_one_path);
@@ -369,7 +427,8 @@ int main(int argc, char **argv)
     }
     if (!FileExists(level_one_path)) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -377,7 +436,8 @@ int main(int argc, char **argv)
     }
     if (argc == 2 && strcmp(argv[1], "--check-assets") == 0) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -389,7 +449,8 @@ int main(int argc, char **argv)
     }
     if (argc == 2 && strcmp(argv[1], "--check-scaffold") == 0) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -407,7 +468,8 @@ int main(int argc, char **argv)
 
     if (argc == 2 && strcmp(argv[1], "--check-level") == 0) {
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(bat_path);
@@ -446,7 +508,8 @@ int main(int argc, char **argv)
             level_error, sizeof(level_error))) {
         (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -470,7 +533,8 @@ int main(int argc, char **argv)
         (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
         eik_level_unload(app.world, &app.level);
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -494,7 +558,8 @@ int main(int argc, char **argv)
         eik_renderer_unload(&app.renderer);
         eik_level_unload(app.world, &app.level);
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         free(tileset_path);
         free(sky_path);
         free(level_zero_path);
@@ -530,7 +595,8 @@ int main(int argc, char **argv)
     if (app.sprite.id == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected asset: %s\n", sprite_path);
         free(sprite_path);
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
 #if !defined(EIK_IOS_SIMULATOR)
         CloseAudioDevice();
 #endif
@@ -542,7 +608,8 @@ int main(int argc, char **argv)
     app.tint_shader = LoadShaderFromMemory(NULL, tint_fragment_shader);
     if (app.tint_shader.id == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: tint shader failed to compile\n");
-        free(sound_path);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
         UnloadTexture(app.sprite);
 #if !defined(EIK_IOS_SIMULATOR)
         CloseAudioDevice();
@@ -553,20 +620,35 @@ int main(int argc, char **argv)
     }
     app.shader_loaded = true;
 #if !defined(EIK_IOS_SIMULATOR)
-    app.jump_sound = LoadSound(sound_path);
-    if (app.jump_sound.frameCount == 0U) {
-        (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected jump sound\n");
-        free(sound_path);
-        UnloadShader(app.tint_shader);
-        UnloadTexture(app.sprite);
-        CloseAudioDevice();
-        CloseWindow();
-        ecs_fini(app.world);
-        return EXIT_FAILURE;
-    }
-    app.sound_loaded = true;
+    {
+        const EikAudioPaths audio_paths = {
+            .sounds = { jump_path, hit_path, collect_path, bounce_path, disappear_path,
+                button_click_path },
+            .menu_music = menu_music_path,
+        };
+
+        if (!eik_audio_init(&app.audio, &audio_paths, level_error, sizeof(level_error))) {
+            (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+            free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+                button_click_path, menu_music_path);
+            UnloadShader(app.tint_shader);
+            UnloadTexture(app.sprite);
+            eik_renderer_unload(&app.renderer);
+            eik_level_unload(app.world, &app.level);
+            CloseAudioDevice();
+            CloseWindow();
+            ecs_fini(app.world);
+            return EXIT_FAILURE;
+        }
+        eik_audio_set_state(&app.audio, EIK_AUDIO_PLAYING);
+#if defined(EIK_IOS)
+        eik_ios_configure_audio_session();
+        eik_ios_set_audio_lifecycle_callbacks(pause_audio, resume_audio);
 #endif
-    free(sound_path);
+    }
+#endif
+    free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+        button_click_path, menu_music_path);
 
     app.running = true;
 #if defined(EIK_IOS)
@@ -577,9 +659,7 @@ int main(int argc, char **argv)
     while (app.running) {
         tick();
     }
-    if (app.sound_loaded) {
-        UnloadSound(app.jump_sound);
-    }
+    eik_audio_unload(&app.audio);
     if (app.shader_loaded) {
         UnloadShader(app.tint_shader);
     }

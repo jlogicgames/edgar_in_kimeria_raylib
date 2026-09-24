@@ -368,8 +368,8 @@ platforms before any gameplay code depends on them.
    warning flags as in 1.2.
 2. `main.c`: a Flecs world, three empty pipelines, the frame loop from 2.2, and a
    1280×720 window titled "Edgard in Kimeria" that draws one sprite. The asset root comes
-   from `EIK_ASSET_ROOT`, else `GetApplicationDirectory()/assets`; loading fails loudly with
-   the full path.
+   from `EIK_ASSET_ROOT`, else `GetApplicationDirectory()/assets`; a macOS app bundle first
+   resolves `Contents/Resources/assets`. Loading fails loudly with the full path.
 3. Web: `emscripten_set_main_loop`, `web/shell.html` with a canvas that fills the viewport
    and a resize callback (Rust's `fit_canvas_to_parent`), `--preload-file assets`.
 4. CI (`ci.yml`) on a macOS runner: build macOS and web, run the tests.
@@ -505,6 +505,9 @@ the last world render texture while paused and applies the shared chroma pass be
 pause menu are drawn.
 
 ### Phase 12: Release
+**Status:** Implementation complete; credentialed signing, notarization, TestFlight upload and
+Finder/device acceptance remain pending a release account.
+
 1. macOS: a signed, notarized `.app` with `assets/` in its `Resources/`; the asset root
    falls back to the bundle's resource path. Verify by launching from Finder.
 2. iOS: a signed build installable through TestFlight. Store submission isn't part of this
@@ -515,6 +518,18 @@ pause menu are drawn.
    Rust** section listing every FIX row and every NEW row.
 
 ### Phase 13: Parity sign-off
+**Status:** Blocked on the local Rust reference build. The raylib build and all nine
+headless checks passed on 2026-09-24. Scripted raylib captures completed for both levels
+and every input mode (`run`, `left`, `fx`, `cycle`, `checkpoint`, `pause`), with two
+screenshots per run. The Rust reference completed the same six modes on `forest-1`, but
+its `forest` capture aborts before taking a screenshot: Bevy/WGPU rejects the
+`transparent_mesh2d_pipeline` because the shader binding's 32-byte structure exceeds the
+pipeline's 24-byte minimum binding size. A local `cargo build --release` was started to
+refresh the reference, but is currently holding Cargo's build-directory lock. Do not mark
+the rows below as signed off until it finishes, all twelve Rust capture runs are available,
+and the paired captures have been inspected. iOS device, Safari autoplay and credentialed
+release checks also remain platform/account acceptance work.
+
 1. Walk through the Rust README's feature parity list and section 3 of this plan; tick
    each row with the capture, test or device check that proves it.
 2. Side-by-side capture runs: the same `EIK_CAPTURE_*` settings on both builds, every

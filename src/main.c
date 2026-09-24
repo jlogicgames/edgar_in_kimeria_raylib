@@ -219,6 +219,23 @@ static char *asset_path(const char *relative_path)
         if (root == NULL || root[0] == '\0') {
             root = ".";
         }
+#if defined(__APPLE__) && !defined(EIK_IOS)
+        /* A Finder-launched .app keeps its executable in Contents/MacOS while CMake
+         * packages assets in Contents/Resources. Command-line builds retain the
+         * adjacent assets/ fallback below. */
+        path_length = strlen(root) + strlen("../Resources/assets/")
+            + strlen(relative_path) + 1U;
+        path = malloc(path_length);
+        if (path != NULL) {
+            (void)snprintf(path, path_length, "%s../Resources/assets/%s", root,
+                relative_path);
+            if (FileExists(path)) {
+                return path;
+            }
+            free(path);
+            path = NULL;
+        }
+#endif
         path_length = strlen(root) + strlen("assets/") + strlen(relative_path) + 1U;
         path = malloc(path_length);
         if (path != NULL) {

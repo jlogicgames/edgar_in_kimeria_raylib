@@ -11,6 +11,10 @@ project(edgard_in_kimeria VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Supplying a team makes device archives ready for Xcode's automatic signing. Keep this
+# empty for simulator and local unsigned builds, where a developer account is not needed.
+set(EIK_IOS_DEVELOPMENT_TEAM "" CACHE STRING "Apple development team for iOS device archives")
+
 include(FetchContent)
 
 # This project intentionally remains on raylib 5.5: later phases use APIs introduced in
@@ -131,11 +135,13 @@ add_library(eik_level STATIC
 target_link_libraries(eik_level PUBLIC eik_collision ${EIK_RAYLIB_TARGET} flecs yxml)
 target_include_directories(eik_level PUBLIC src)
 
-if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+if (APPLE)
     add_executable(edgard_in_kimeria MACOSX_BUNDLE
         src/main.c
-        src/platform_ios.m
     )
+    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        target_sources(edgard_in_kimeria PRIVATE src/platform_ios.m)
+    endif()
 else()
     add_executable(edgard_in_kimeria src/main.c)
 endif()
@@ -163,31 +169,38 @@ set_target_properties(edgard_in_kimeria PROPERTIES
 # The desktop executable resolves assets relative to its own directory. Keep a
 # copy beside it for local runs and CTest while the web build preloads the same
 # source directory directly (below).
-if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
-    set_target_properties(edgard_in_kimeria PROPERTIES
-        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.jlogicgames.edgard-in-kimeria"
-        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
-    )
-    set(EIK_BUNDLE_ASSETS)
-    file(GLOB_RECURSE EIK_ASSET_FILES CONFIGURE_DEPENDS
+if (APPLE)
+    file(GLOB_RECURSE EIK_BUNDLE_ASSETS CONFIGURE_DEPENDS
         ${CMAKE_CURRENT_SOURCE_DIR}/assets/*
     )
-    foreach (asset IN LISTS EIK_ASSET_FILES)
+    foreach (asset IN LISTS EIK_BUNDLE_ASSETS)
         if (NOT IS_DIRECTORY ${asset})
             file(RELATIVE_PATH asset_relative ${CMAKE_CURRENT_SOURCE_DIR}/assets ${asset})
             get_filename_component(asset_directory ${asset_relative} DIRECTORY)
             set_source_files_properties(${asset} PROPERTIES
                 MACOSX_PACKAGE_LOCATION Resources/assets/${asset_directory}
             )
-            list(APPEND EIK_BUNDLE_ASSETS ${asset})
         endif()
     endforeach()
+    target_sources(edgard_in_kimeria PRIVATE ${EIK_BUNDLE_ASSETS})
+endif()
+
+if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set_target_properties(edgard_in_kimeria PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/ios/Info.plist
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.jlogicgames.edgard-in-kimeria"
+        XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
+    )
+    if (NOT EIK_IOS_DEVELOPMENT_TEAM STREQUAL "")
+        set_target_properties(edgard_in_kimeria PROPERTIES
+            XCODE_ATTRIBUTE_DEVELOPMENT_TEAM ${EIK_IOS_DEVELOPMENT_TEAM}
+            XCODE_ATTRIBUTE_CODE_SIGN_STYLE "Automatic"
+        )
+    endif()
     set_source_files_properties(ios/LaunchScreen.storyboard PROPERTIES
         MACOSX_PACKAGE_LOCATION Resources
     )
     target_sources(edgard_in_kimeria PRIVATE
-        ${EIK_BUNDLE_ASSETS}
         ios/LaunchScreen.storyboard
     )
     target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS=1)
@@ -198,6 +211,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
         )
         target_compile_definitions(edgard_in_kimeria PRIVATE EIK_IOS_SIMULATOR=1)
     endif()
+elseif (APPLE)
+    set_target_properties(edgard_in_kimeria PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist
+    )
 else()
     # The desktop executable resolves assets relative to its own directory. Keep a
     # copy beside it for local runs and CTest while the web build preloads the same

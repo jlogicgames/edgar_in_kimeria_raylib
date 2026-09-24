@@ -409,6 +409,8 @@ platforms before any gameplay code depends on them.
    `EIK_CAPTURE_LEVEL=1` matches the Rust build's at the same settings.
 
 ### Phase 3: Player and the fixed-step loop
+**Status:** Complete.
+
 1. `GameTime` and the fixed accumulator (2.2).
 2. `input.c`: keyboard and gamepad (I1, I2), and the capture script overlay.
 3. `anim.c` and the player clip table (A.2), including the attack clip wrapping at 4 per row.

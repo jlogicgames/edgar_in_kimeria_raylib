@@ -3,7 +3,9 @@
 #include <string.h>
 
 #include "flecs.h"
+#include "input.h"
 #include "mod_level.h"
+#include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
 
@@ -28,12 +30,10 @@ typedef struct App {
     Texture2D sprite;
     Shader tint_shader;
     Sound jump_sound;
-    struct {
-        int touch_count;
-        Vector2 touch_position;
-        bool gamepad_connected;
-        float gamepad_horizontal;
-    } input_frame;
+    EikInputFrame input_frame;
+    EikGameTime game_time;
+    EikGameProgress progress;
+    EikPlayer player;
     bool shader_loaded;
     bool sound_loaded;
     EikLevelState level;
@@ -157,47 +157,73 @@ static void initialize_world(void)
     eik_level_register(app.world);
 }
 
-static void update_input_frame(void)
+static EIKBlockKind block_kind_from_object(const EikTmxObject *object)
 {
-    app.input_frame.touch_count = GetTouchPointCount();
-    app.input_frame.touch_position = (Vector2){ 0.0F, 0.0F };
-    if (app.input_frame.touch_count > 0) {
-        app.input_frame.touch_position = GetTouchPosition(0);
+    if (strcmp(object->class_name, "Platform") == 0) {
+        return EIK_BLOCK_PLATFORM;
     }
-    app.input_frame.gamepad_connected = IsGamepadAvailable(0);
-    app.input_frame.gamepad_horizontal = 0.0F;
-    if (app.input_frame.gamepad_connected) {
-        app.input_frame.gamepad_horizontal = GetGamepadAxisMovement(
-            0, GAMEPAD_AXIS_LEFT_X);
+    if (strcmp(object->class_name, "QuickSand") == 0) {
+        return EIK_BLOCK_QUICKSAND;
     }
+    if (strcmp(object->class_name, "Wall") == 0) {
+        return EIK_BLOCK_WALL;
+    }
+    return EIK_BLOCK_SOLID;
+}
+
+static EIKCollisionWorld collision_snapshot(const EikLevelState *level,
+    EIKBlockSnapshot *blocks, size_t capacity)
+{
+    size_t object_index = 0U;
+    size_t block_count = 0U;
+
+    for (object_index = 0U; object_index < level->map.object_count; ++object_index) {
+        const EikTmxObject *object = &level->map.objects[object_index];
+
+        if (strcmp(object->layer, "Collisions") != 0 || block_count >= capacity) {
+            continue;
+        }
+        blocks[block_count++] = (EIKBlockSnapshot){
+            .id = (uint32_t)object_index,
+            .position = { object->x, object->y },
+            .size = { object->width, object->height },
+            .kind = block_kind_from_object(object),
+        };
+    }
+    return (EIKCollisionWorld){ .blocks = blocks, .block_count = block_count };
 }
 
 static void tick(void)
 {
     static float accumulator = 0.0F;
-    static int previous_touch_count = 0;
-    const float real_dt = GetFrameTime() > 0.25F ? 0.25F : GetFrameTime();
+    EIKBlockSnapshot blocks[64];
+    EIKCollisionWorld world;
+    const float raw_dt = GetFrameTime();
 
-    ecs_run_pipeline(app.world, app.pre_pipeline, real_dt);
-    accumulator += real_dt;
-    while (accumulator >= (1.0F / 60.0F)) {
-        ecs_run_pipeline(app.world, app.fixed_pipeline, 1.0F / 60.0F);
-        accumulator -= 1.0F / 60.0F;
+    eik_game_time_begin_frame(&app.game_time, raw_dt);
+    app.input_frame = eik_input_read();
+    if (app.input_frame.pause_pressed) {
+        app.running = false;
     }
-    ecs_run_pipeline(app.world, app.update_pipeline, real_dt);
-
-    update_input_frame();
-    if (app.sound_loaded && (IsKeyPressed(KEY_SPACE)
-            || (app.input_frame.touch_count > 0 && previous_touch_count == 0))) {
-        PlaySound(app.jump_sound);
+    ecs_run_pipeline(app.world, app.pre_pipeline, app.game_time.real_dt);
+    world = collision_snapshot(&app.level, blocks, sizeof(blocks) / sizeof(blocks[0]));
+    accumulator += app.game_time.virtual_dt;
+    while (accumulator >= app.game_time.fixed_dt) {
+        eik_player_fixed_step(&app.player, &app.progress, &app.input_frame, &world,
+            app.game_time.fixed_dt);
+        ecs_run_pipeline(app.world, app.fixed_pipeline, app.game_time.fixed_dt);
+        accumulator -= app.game_time.fixed_dt;
     }
-    previous_touch_count = app.input_frame.touch_count;
+    eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
+    app.level.player_position = app.player.position;
+    app.level.has_player = !app.progress.game_over;
+    ecs_run_pipeline(app.world, app.update_pipeline, app.game_time.real_dt);
 
     if (IsKeyPressed(KEY_F1)) {
         app.show_collision = !app.show_collision;
     }
-    eik_renderer_update_camera(&app.renderer, &app.level, real_dt);
-    eik_renderer_draw(&app.renderer, &app.level, app.show_collision);
+    eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
+    eik_renderer_draw(&app.renderer, &app.level, &app.player, app.sprite, app.show_collision);
 
     if (WindowShouldClose()) {
         app.running = false;
@@ -326,6 +352,10 @@ int main(int argc, char **argv)
         ecs_fini(app.world);
         return EXIT_FAILURE;
     }
+    app.game_time.time_scale = 1.0F;
+    app.progress = (EikGameProgress){ .lives = 3, .current_level = level_index };
+    eik_player_spawn(&app.player, app.level.player_position);
+    app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
     eik_renderer_snap_camera(&app.renderer);
     if (!eik_renderer_init(&app.renderer, tileset_path, sky_path,
             level_error, sizeof(level_error))) {

@@ -135,7 +135,8 @@ static void draw_collision_overlay(const EikLevelState *level, Vector2 camera)
     }
 }
 
-void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level, bool show_collision)
+void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
+    const EikPlayer *player, Texture2D player_texture, bool show_collision)
 {
     const float scale_x = (float)GetScreenWidth() / EIK_LOGICAL_WIDTH;
     const float scale_y = (float)GetScreenHeight() / EIK_LOGICAL_HEIGHT;
@@ -151,6 +152,18 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level, bool s
     DrawTexture(renderer->sky, sky_x, 0, WHITE);
     DrawTexture(renderer->sky, sky_x + renderer->sky.width, 0, WHITE);
     draw_tiles(renderer, &level->map, renderer->camera_top_left);
+    if (player != NULL && player_texture.id != 0U && level->has_player) {
+        Rectangle source = eik_player_frame_rect(&player->animation);
+        const Rectangle destination = { player->position.x - renderer->camera_top_left.x,
+            player->position.y - renderer->camera_top_left.y, 48.0F, 48.0F };
+
+        if (!player->facing_right) {
+            source.x += source.width;
+            source.width = -source.width;
+        }
+        DrawTexturePro(player_texture, source, destination, (Vector2){ 0.0F, 0.0F },
+            0.0F, WHITE);
+    }
     if (show_collision) {
         draw_collision_overlay(level, renderer->camera_top_left);
     }

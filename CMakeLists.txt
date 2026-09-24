@@ -111,8 +111,11 @@ add_library(eik_level STATIC
     src/tmx.c
     src/mod_level.c
     src/render.c
+    src/input.c
+    src/anim.c
+    src/mod_player.c
 )
-target_link_libraries(eik_level PUBLIC ${EIK_RAYLIB_TARGET} flecs yxml)
+target_link_libraries(eik_level PUBLIC eik_collision ${EIK_RAYLIB_TARGET} flecs yxml)
 target_include_directories(eik_level PUBLIC src)
 
 if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
@@ -218,4 +221,8 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_compile_options(test_tmx PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME tmx COMMAND test_tmx ${CMAKE_CURRENT_SOURCE_DIR}/assets/tiles
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/offset.tmx)
+    add_executable(test_player tests/test_player.c)
+    target_link_libraries(test_player PRIVATE eik_level)
+    target_compile_options(test_player PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME player COMMAND test_player)
 endif()

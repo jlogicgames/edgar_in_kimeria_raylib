@@ -7,6 +7,7 @@
 #include "raylib.h"
 
 #include "mod_level.h"
+#include "mod_player.h"
 
 typedef struct EikRenderer {
     Texture2D tileset;
@@ -23,6 +24,7 @@ bool eik_renderer_init(EikRenderer *renderer, const char *tileset_path, const ch
 void eik_renderer_unload(EikRenderer *renderer);
 void eik_renderer_snap_camera(EikRenderer *renderer);
 void eik_renderer_update_camera(EikRenderer *renderer, const EikLevelState *level, float dt);
-void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level, bool show_collision);
+void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
+    const EikPlayer *player, Texture2D player_texture, bool show_collision);
 
 #endif

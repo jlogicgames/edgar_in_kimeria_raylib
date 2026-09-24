@@ -362,18 +362,22 @@ Each phase leaves something runnable and ends with a named check. Phase 0 proves
 platforms before any gameplay code depends on them.
 
 ### Phase 0a: Scaffold (macOS, web)
+**Status:** Complete.
+
 1. CMake project; raylib 5.5 via `FetchContent`; vendored Flecs (custom build) and yxml;
    warning flags as in 1.2.
 2. `main.c`: a Flecs world, three empty pipelines, the frame loop from 2.2, and a
    1280×720 window titled "Edgard in Kimeria" that draws one sprite. The asset root comes
-   from `EIK_ASSET_ROOT`, else `GetApplicationDirectory()/assets`; loading fails loudly with
-   the full path.
+   from `EIK_ASSET_ROOT`, else `GetApplicationDirectory()/assets`; a macOS app bundle first
+   resolves `Contents/Resources/assets`. Loading fails loudly with the full path.
 3. Web: `emscripten_set_main_loop`, `web/shell.html` with a canvas that fills the viewport
    and a resize callback (Rust's `fit_canvas_to_parent`), `--preload-file assets`.
 4. CI (`ci.yml`) on a macOS runner: build macOS and web, run the tests.
 5. **Check:** CI green; the sprite shows on macOS and in the browser.
 
 ### Phase 0b: iOS spike (section 1.4)
+**Status:** Implementation complete; physical-device acceptance remains pending.
+
 1. raylib's SDL backend with `GRAPHICS_API_OPENGL_ES3`, built for iOS from CMake's Xcode
    generator; an `.app` bundle with `assets/` as resources.
 2. The Phase 0a scene plus one shader, one sound, a touch point and a gamepad reading.
@@ -382,6 +386,8 @@ platforms before any gameplay code depends on them.
    Route B; if both fail, stop and re-plan.
 
 ### Phase 1: Collision core and tests
+**Status:** Complete.
+
 1. Port `core/collision.rs` into `collision.c` function for function: `overlaps`,
    `hitbox_left_x`, `resolve_horizontal`, `apply_gravity`, `resolve_vertical` (with its
    `VerticalOutcome`), and `mirrored_pos`. Apply the O10 fix here, and the P13 unit change.
@@ -391,6 +397,8 @@ platforms before any gameplay code depends on them.
 3. **Check:** all tests pass under `ctest`.
 
 ### Phase 2: Level loading, tilemap, camera
+**Status:** Complete.
+
 1. `tmx.c` built on yxml (L1, L2, L3 with offsets honoured), and `test_tmx.c` asserting the
    object counts, classes and spawn order of both maps.
 2. `mod_level.c`: spawn by class (L4, L5), collision blocks with `SpawnIndex`, map size,
@@ -401,6 +409,8 @@ platforms before any gameplay code depends on them.
    `EIK_CAPTURE_LEVEL=1` matches the Rust build's at the same settings.
 
 ### Phase 3: Player and the fixed-step loop
+**Status:** Complete.
+
 1. `GameTime` and the fixed accumulator (2.2).
 2. `input.c`: keyboard and gamepad (I1, I2), and the capture script overlay.
 3. `anim.c` and the player clip table (A.2), including the attack clip wrapping at 4 per row.
@@ -410,12 +420,16 @@ platforms before any gameplay code depends on them.
    the third death, and lives don't refill at a checkpoint.
 
 ### Phase 4: Enemies and bullet time
+**Status:** Complete.
+
 1. Bat, Yellow and Red mobs (E1–E9), the sword, `EnemyStomped` as a Flecs event.
 2. Bullet time (P12) through `time_scale`; animation keeps real-time speed.
 3. **Check:** a bat pass slows physics but not animation; the Red mob's swing kills
    mid-animation, and it then walks back to its spawn point; the Red mob can be stomped.
 
 ### Phase 5: Items, objects, triggers
+**Status:** Complete.
+
 1. O1–O11, and `TriggerActivated` as a Flecs event observed by walls, escalators and torches.
 2. Port `tests/triggers.rs` (5 tests) against a headless world: a wall is removed by a
    matching id and not by another; an escalator toggles; a torch toggles and relights at
@@ -426,6 +440,9 @@ platforms before any gameplay code depends on them.
    after 3 s.
 
 ### Phase 6: Effects and shaders
+**Status:** Implementation complete; iOS simulator acceptance is pending because this checkout's
+local Xcode toolchain cannot find an iOS C compiler.
+
 1. GLSL ports with the per-platform version header (R6).
 2. Particles, torch, fireflies, fog, shockwave, explosion, and the post pass with ripple and
    poison glitch (X1–X9).
@@ -434,12 +451,18 @@ platforms before any gameplay code depends on them.
    the iOS simulator.
 
 ### Phase 7: Audio
+**Status:** Implementation complete; the manual desktop by-ear check and iOS device acceptance
+remain pending.
+
 1. S1–S4: the alias pool, music with fades keyed to menu states, and the iOS audio session.
 2. **Check:** by ear. Overlapping coin pickups don't cut each other off; Main → About →
    Main doesn't restart the music; Play fades it out over 1 s; on iOS the silent switch
    mutes it and backgrounding pauses it.
 
 ### Phase 8: UI, menus, localization, HUD
+**Status:** Implementation complete; manual keyboard/gamepad/touch walkthrough and iOS
+safe-area acceptance remain pending.
+
 1. `l10n.c` (U11, U14) and font loading with Cyrillic codepoints (U10).
 2. Immediate-mode widgets with focus, eased scale and entrance animation (U7–U9), drawn
    inside the safe area (R8).
@@ -450,6 +473,8 @@ platforms before any gameplay code depends on them.
    are 0 after Exit to Menu → Play.
 
 ### Phase 9: iOS touch controls (D10)
+**Status:** Implementation complete; physical-iPhone acceptance remains pending.
+
 1. Art: `Joystick.png`, `Knob.png` and `JumpButton.png` from the Flutter original. Attack,
    interact and pause have no art: until new art exists, draw them as `JumpButton.png`
    tinted per button with a small glyph on top (sword, hand, pause bars). New art is a
@@ -462,14 +487,27 @@ platforms before any gameplay code depends on them.
    menu over the T1 glitch.
 
 ### Phase 10: Dev tools and capture harness
+**Status:** Implementation complete; interactive macOS capture and Explorer inspection remain
+pending a normal desktop session.
+
 1. I3–I7 complete.
 2. **Check:** each `EIK_CAPTURE_INPUT` mode runs and exits by itself; the Flecs Explorer
    shows the live world in a dev build.
 
 ### Phase 11: Tickets T3, T2, T1
-Section 6. T3 goes first, because audio initialisation moves.
+**Status:** Implementation complete; browser autoplay, macOS persistence and pause-glitch visual
+acceptance remain pending interactive platform sessions.
+
+Section 6. T3 goes first, because audio initialisation moves. T3 defers audio-device and audio
+asset creation until the web start button's user gesture. T2 persists display mode and language,
+defaults desktop to borderless fullscreen, and exposes the desktop-only windowed toggle. T1 reuses
+the last world render texture while paused and applies the shared chroma pass before the HUD and
+pause menu are drawn.
 
 ### Phase 12: Release
+**Status:** Implementation complete; credentialed signing, notarization, TestFlight upload and
+Finder/device acceptance remain pending a release account.
+
 1. macOS: a signed, notarized `.app` with `assets/` in its `Resources/`; the asset root
    falls back to the bundle's resource path. Verify by launching from Finder.
 2. iOS: a signed build installable through TestFlight. Store submission isn't part of this
@@ -480,6 +518,18 @@ Section 6. T3 goes first, because audio initialisation moves.
    Rust** section listing every FIX row and every NEW row.
 
 ### Phase 13: Parity sign-off
+**Status:** Blocked on the local Rust reference build. The raylib build and all nine
+headless checks passed on 2026-09-24. Scripted raylib captures completed for both levels
+and every input mode (`run`, `left`, `fx`, `cycle`, `checkpoint`, `pause`), with two
+screenshots per run. The Rust reference completed the same six modes on `forest-1`, but
+its `forest` capture aborts before taking a screenshot: Bevy/WGPU rejects the
+`transparent_mesh2d_pipeline` because the shader binding's 32-byte structure exceeds the
+pipeline's 24-byte minimum binding size. A local `cargo build --release` was started to
+refresh the reference, but is currently holding Cargo's build-directory lock. Do not mark
+the rows below as signed off until it finishes, all twelve Rust capture runs are available,
+and the paired captures have been inspected. iOS device, Safari autoplay and credentialed
+release checks also remain platform/account acceptance work.
+
 1. Walk through the Rust README's feature parity list and section 3 of this plan; tick
    each row with the capture, test or device check that proves it.
 2. Side-by-side capture runs: the same `EIK_CAPTURE_*` settings on both builds, every

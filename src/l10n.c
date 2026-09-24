@@ -9,7 +9,7 @@ static const char *const messages[EIK_LANGUAGE_COUNT][EIK_MSG_COUNT] = {
         "Arrows/Tab to move - Enter/Space/A to confirm - Esc/B to go back",
         "Edgard in Kimeria\n\nUse WASD or Arrow Keys for movement.\nJ/Z to jump. K/X to attack. L/C to interact.\nEscape to pause.\nCollect as many stars as you can and avoid enemies!",
         "Edgard in Kimeria\n\nUse the on-screen controls to move, jump, attack and interact.\nCollect as many stars as you can and avoid enemies!",
-        "Lives",
+        "Lives", "Display: Fullscreen", "Display: Windowed",
     },
     [EIK_LANGUAGE_UKRAINIAN] = {
         "Едгард у Кімерії", "Грати", "Про гру", "Налаштування", "Вихід", "Назад",
@@ -20,7 +20,7 @@ static const char *const messages[EIK_LANGUAGE_COUNT][EIK_MSG_COUNT] = {
         "Стрілки/Tab — рух - Enter/Пробіл/A — підтвердити - Esc/B — назад",
         "Едгард у Кімерії\n\nВикористовуйте WASD або стрілки для руху.\nJ/Z — стрибок. K/X — атака. L/C — взаємодія.\nEscape — пауза.\nЗберіть якомога більше зірок і уникайте ворогів!",
         "Едгард у Кімерії\n\nВикористовуйте екранні елементи керування для руху, стрибка, атаки та взаємодії.\nЗберіть якомога більше зірок і уникайте ворогів!",
-        "Життя",
+        "Життя", "Екран: Повний", "Екран: У вікні",
     },
 };
 

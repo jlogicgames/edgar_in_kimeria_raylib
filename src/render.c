@@ -435,7 +435,7 @@ static void update_fireflies(EikEffects *effects, const EikLevelState *level, fl
 }
 
 void eik_renderer_update_effects(EikRenderer *renderer, const EikLevelState *level,
-    const EikItemWorld *items, float real_dt)
+    const EikItemWorld *items, float real_dt, bool paused)
 {
     EikEffects *effects = &renderer->effects;
     size_t index = 0U;
@@ -465,7 +465,7 @@ void eik_renderer_update_effects(EikRenderer *renderer, const EikLevelState *lev
         effects->ripple.elapsed += real_dt;
         effects->ripple.active = effects->ripple.elapsed < effects->ripple.duration;
     }
-    if (effects->chroma_enabled) {
+    if (effects->chroma_enabled && !paused) {
         if (effects->chroma_elapsed > 0.0F) {
             effects->chroma_elapsed += real_dt;
         } else {
@@ -819,7 +819,7 @@ static void draw_actor_hitboxes(const EikPlayer *player, const EikEnemyWorld *en
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     const EikPlayer *player, const EikEnemyWorld *enemies, const EikItemWorld *items,
     Texture2D player_texture,
-    bool show_collision)
+    bool show_collision, bool paused)
 {
     const float scale_x = (float)GetScreenWidth() / EIK_LOGICAL_WIDTH;
     const float scale_y = (float)GetScreenHeight() / EIK_LOGICAL_HEIGHT;
@@ -830,31 +830,33 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     const float view_y = ((float)GetScreenHeight() - view_height) * 0.5F;
     int sky_x = (int)renderer->sky_scroll;
 
-    BeginTextureMode(renderer->world_target);
-    ClearBackground((Color){ 19, 30, 54, 255 });
-    DrawTexture(renderer->sky, sky_x, 0, WHITE);
-    DrawTexture(renderer->sky, sky_x + renderer->sky.width, 0, WHITE);
-    draw_tiles(renderer, &level->map, renderer->camera_top_left);
-    draw_items(items, renderer->camera_top_left, show_collision);
-    draw_world_effects(renderer, items, renderer->camera_top_left);
-    draw_enemies(renderer, enemies, renderer->camera_top_left);
-    if (player != NULL && player_texture.id != 0U && level->has_player) {
-        Rectangle source = eik_player_frame_rect(&player->animation);
-        const Rectangle destination = { player->position.x - renderer->camera_top_left.x,
-            player->position.y - renderer->camera_top_left.y, 48.0F, 48.0F };
+    if (!paused) {
+        BeginTextureMode(renderer->world_target);
+        ClearBackground((Color){ 19, 30, 54, 255 });
+        DrawTexture(renderer->sky, sky_x, 0, WHITE);
+        DrawTexture(renderer->sky, sky_x + renderer->sky.width, 0, WHITE);
+        draw_tiles(renderer, &level->map, renderer->camera_top_left);
+        draw_items(items, renderer->camera_top_left, show_collision);
+        draw_world_effects(renderer, items, renderer->camera_top_left);
+        draw_enemies(renderer, enemies, renderer->camera_top_left);
+        if (player != NULL && player_texture.id != 0U && level->has_player) {
+            Rectangle source = eik_player_frame_rect(&player->animation);
+            const Rectangle destination = { player->position.x - renderer->camera_top_left.x,
+                player->position.y - renderer->camera_top_left.y, 48.0F, 48.0F };
 
-        if (!player->facing_right) {
-            source.x += source.width;
-            source.width = -source.width;
+            if (!player->facing_right) {
+                source.x += source.width;
+                source.width = -source.width;
+            }
+            DrawTexturePro(player_texture, source, destination, (Vector2){ 0.0F, 0.0F },
+                0.0F, WHITE);
         }
-        DrawTexturePro(player_texture, source, destination, (Vector2){ 0.0F, 0.0F },
-            0.0F, WHITE);
+        if (show_collision) {
+            draw_collision_overlay(level, renderer->camera_top_left);
+            draw_actor_hitboxes(player, enemies, renderer->camera_top_left);
+        }
+        EndTextureMode();
     }
-    if (show_collision) {
-        draw_collision_overlay(level, renderer->camera_top_left);
-        draw_actor_hitboxes(player, enemies, renderer->camera_top_left);
-    }
-    EndTextureMode();
 
     BeginDrawing();
     ClearBackground(BLACK);
@@ -866,8 +868,8 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
                 / EIK_LOGICAL_WIDTH,
             1.0F - (effects->ripple.centre.y - renderer->camera_top_left.y) / EIK_LOGICAL_HEIGHT };
         const float aspect = (float)EIK_LOGICAL_WIDTH / EIK_LOGICAL_HEIGHT;
-        const float chroma_intensity = effects->chroma_elapsed > 0.0F ? 1.0F : 0.0F;
-        const float chroma_shift = effects->chroma_shift;
+        const float chroma_intensity = paused || effects->chroma_elapsed > 0.0F ? 1.0F : 0.0F;
+        const float chroma_shift = paused ? 0.010F : effects->chroma_shift;
 
         set_uniform(effects->screen_shader, effects->screen_ripple_center, ripple_center,
             SHADER_UNIFORM_VEC2);

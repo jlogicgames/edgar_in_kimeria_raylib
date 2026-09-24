@@ -495,7 +495,14 @@ pending a normal desktop session.
    shows the live world in a dev build.
 
 ### Phase 11: Tickets T3, T2, T1
-Section 6. T3 goes first, because audio initialisation moves.
+**Status:** Implementation complete; browser autoplay, macOS persistence and pause-glitch visual
+acceptance remain pending interactive platform sessions.
+
+Section 6. T3 goes first, because audio initialisation moves. T3 defers audio-device and audio
+asset creation until the web start button's user gesture. T2 persists display mode and language,
+defaults desktop to borderless fullscreen, and exposes the desktop-only windowed toggle. T1 reuses
+the last world render texture while paused and applies the shared chroma pass before the HUD and
+pause menu are drawn.
 
 ### Phase 12: Release
 1. macOS: a signed, notarized `.app` with `assets/` in its `Resources/`; the asset root

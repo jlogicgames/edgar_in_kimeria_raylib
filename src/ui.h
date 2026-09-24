@@ -8,6 +8,7 @@
 #include "raylib.h"
 
 typedef enum EikAppState {
+    EIK_APP_WEB_START,
     EIK_APP_MAIN_MENU,
     EIK_APP_ABOUT,
     EIK_APP_OPTIONS,
@@ -22,6 +23,9 @@ typedef enum EikUiAction {
     EIK_UI_ACTION_RESUME,
     EIK_UI_ACTION_EXIT_TO_MENU,
     EIK_UI_ACTION_QUIT,
+    EIK_UI_ACTION_START_WEB,
+    EIK_UI_ACTION_LANGUAGE_CHANGED,
+    EIK_UI_ACTION_TOGGLE_DISPLAY,
 } EikUiAction;
 
 typedef struct EikUi {
@@ -32,6 +36,7 @@ typedef struct EikUi {
     EikAppState state;
     int focus;
     float entered_at;
+    bool fullscreen;
     bool initialized;
 } EikUi;
 

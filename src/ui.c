@@ -17,24 +17,32 @@ typedef enum EikMenuButton {
     EIK_BUTTON_RESUME,
     EIK_BUTTON_EXIT_TO_MENU,
     EIK_BUTTON_PLAY_AGAIN,
+    EIK_BUTTON_DISPLAY,
 } EikMenuButton;
 
 static bool is_menu_state(EikAppState state)
 {
-    return state == EIK_APP_MAIN_MENU || state == EIK_APP_ABOUT || state == EIK_APP_OPTIONS
+    return state == EIK_APP_WEB_START || state == EIK_APP_MAIN_MENU || state == EIK_APP_ABOUT
+        || state == EIK_APP_OPTIONS
         || state == EIK_APP_PAUSED || state == EIK_APP_GAME_OVER;
 }
 
 static int button_count(EikAppState state)
 {
     switch (state) {
+        case EIK_APP_WEB_START: return 1;
         case EIK_APP_MAIN_MENU:
 #if defined(PLATFORM_WEB) || defined(EIK_IOS)
             return 3;
 #else
             return 4;
 #endif
-        case EIK_APP_OPTIONS: return 3;
+        case EIK_APP_OPTIONS:
+#if defined(PLATFORM_WEB) || defined(EIK_IOS)
+            return 3;
+#else
+            return 4;
+#endif
         case EIK_APP_ABOUT: return 1;
         case EIK_APP_PAUSED: return 2;
         case EIK_APP_GAME_OVER: return 1;
@@ -56,8 +64,14 @@ static EikMenuButton button_at(const EikUi *ui, int index)
     static const EikMenuButton game_over_buttons[] = { EIK_BUTTON_PLAY_AGAIN };
 
     switch (ui->state) {
+        case EIK_APP_WEB_START: return EIK_BUTTON_PLAY;
         case EIK_APP_MAIN_MENU: return main_buttons[index];
-        case EIK_APP_OPTIONS: return options_buttons[index];
+        case EIK_APP_OPTIONS:
+#if defined(PLATFORM_WEB) || defined(EIK_IOS)
+            return options_buttons[index];
+#else
+            return index == 2 ? EIK_BUTTON_DISPLAY : options_buttons[index == 3 ? 2 : index];
+#endif
         case EIK_APP_ABOUT: return about_buttons[index];
         case EIK_APP_PAUSED: return pause_buttons[index];
         case EIK_APP_GAME_OVER: return game_over_buttons[index];
@@ -85,6 +99,9 @@ static const char *button_label(const EikUi *ui, EikMenuButton button)
         case EIK_BUTTON_RESUME: return eik_l10n(ui->language, EIK_MSG_RESUME);
         case EIK_BUTTON_EXIT_TO_MENU: return eik_l10n(ui->language, EIK_MSG_EXIT_TO_MENU);
         case EIK_BUTTON_PLAY_AGAIN: return eik_l10n(ui->language, EIK_MSG_PLAY_AGAIN);
+        case EIK_BUTTON_DISPLAY:
+            return eik_l10n(ui->language, ui->fullscreen
+                ? EIK_MSG_DISPLAY_FULLSCREEN : EIK_MSG_DISPLAY_WINDOWED);
     }
     return "";
 }
@@ -130,6 +147,7 @@ static EikUiAction activate(EikUi *ui, EikMenuButton button)
 {
     switch (button) {
         case EIK_BUTTON_PLAY:
+            return ui->state == EIK_APP_WEB_START ? EIK_UI_ACTION_START_WEB : EIK_UI_ACTION_PLAY;
         case EIK_BUTTON_PLAY_AGAIN: return EIK_UI_ACTION_PLAY;
         case EIK_BUTTON_ABOUT:
             eik_ui_set_state(ui, EIK_APP_ABOUT);
@@ -144,13 +162,16 @@ static EikUiAction activate(EikUi *ui, EikMenuButton button)
         case EIK_BUTTON_ENGLISH:
             ui->language = EIK_LANGUAGE_ENGLISH;
             eik_ui_set_state(ui, EIK_APP_MAIN_MENU);
-            return EIK_UI_ACTION_NONE;
+            return EIK_UI_ACTION_LANGUAGE_CHANGED;
         case EIK_BUTTON_UKRAINIAN:
             ui->language = EIK_LANGUAGE_UKRAINIAN;
             eik_ui_set_state(ui, EIK_APP_MAIN_MENU);
-            return EIK_UI_ACTION_NONE;
+            return EIK_UI_ACTION_LANGUAGE_CHANGED;
         case EIK_BUTTON_RESUME: return EIK_UI_ACTION_RESUME;
         case EIK_BUTTON_EXIT_TO_MENU: return EIK_UI_ACTION_EXIT_TO_MENU;
+        case EIK_BUTTON_DISPLAY:
+            ui->fullscreen = !ui->fullscreen;
+            return EIK_UI_ACTION_TOGGLE_DISPLAY;
     }
     return EIK_UI_ACTION_NONE;
 }
@@ -165,7 +186,8 @@ bool eik_ui_init(EikUi *ui, const char *text_font_path, const char *button_font_
     int codepoint_count = 0;
     int *codepoints = NULL;
 
-    *ui = (EikUi){ .language = EIK_LANGUAGE_ENGLISH, .state = EIK_APP_MAIN_MENU };
+    *ui = (EikUi){ .language = EIK_LANGUAGE_ENGLISH, .state = EIK_APP_MAIN_MENU,
+        .fullscreen = true };
     for (language = EIK_LANGUAGE_ENGLISH; language < EIK_LANGUAGE_COUNT; ++language) {
         for (message = EIK_MSG_TITLE; message < EIK_MSG_COUNT; ++message) {
             const int written = snprintf(text + text_length, sizeof(text) - text_length, "%s ",
@@ -338,7 +360,9 @@ void eik_ui_draw(const EikUi *ui, unsigned int coins, int lives)
     if (!is_menu_state(ui->state)) {
         return;
     }
-    if (ui->state == EIK_APP_MAIN_MENU) {
+    if (ui->state == EIK_APP_WEB_START) {
+        ClearBackground(BLACK);
+    } else if (ui->state == EIK_APP_MAIN_MENU) {
         DrawRectangle(0, 0, width, height, (Color){ 0, 0, 0, 90 });
     } else {
         DrawRectangle(0, 0, width, height, (Color){ 0, 0, 0, 145 });
@@ -367,9 +391,11 @@ void eik_ui_draw(const EikUi *ui, unsigned int coins, int lives)
         if (ui->state != EIK_APP_MAIN_MENU) {
             DrawRectangleRounded(panel, 0.10F, 12, BLACK);
         }
-        draw_centered(ui->text_font, eik_l10n(ui->language, heading),
+        if (ui->state != EIK_APP_WEB_START) {
+            draw_centered(ui->text_font, eik_l10n(ui->language, heading),
             ui->state == EIK_APP_MAIN_MENU ? 75.0F : panel.y + 25.0F,
             ui->state == EIK_APP_MAIN_MENU ? (float)width * 0.075F : 30.0F, white);
+        }
         if (ui->state == EIK_APP_OPTIONS) {
             draw_centered(ui->text_font, eik_l10n(ui->language, EIK_MSG_LANGUAGE), panel.y + 65.0F,
                 18.0F, white);
@@ -392,8 +418,10 @@ void eik_ui_draw(const EikUi *ui, unsigned int coins, int lives)
         DrawTextEx(ui->button_font, label, (Vector2){ scaled.x + (scaled.width - label_size.x) * 0.5F,
             scaled.y + (scaled.height - label_size.y) * 0.5F }, font_size, 1.0F, BLACK);
     }
-    draw_centered(ui->text_font, eik_l10n(ui->language, EIK_MSG_MENU_HINT),
-        (float)height - 28.0F, 12.0F, white);
+    if (ui->state != EIK_APP_WEB_START) {
+        draw_centered(ui->text_font, eik_l10n(ui->language, EIK_MSG_MENU_HINT),
+            (float)height - 28.0F, 12.0F, white);
+    }
     if (ui->state == EIK_APP_PAUSED) {
         draw_multiline_centered(ui->text_font, eik_l10n(ui->language,
 #if defined(EIK_IOS)

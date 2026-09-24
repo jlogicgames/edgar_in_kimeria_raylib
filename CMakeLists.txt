@@ -120,6 +120,7 @@ add_library(eik_level STATIC
     src/touch.c
     src/dev_tools.c
     src/audio.c
+    src/settings.c
     src/l10n.c
     src/ui.c
     src/anim.c
@@ -254,6 +255,10 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_link_libraries(test_l10n PRIVATE eik_level)
     target_compile_options(test_l10n PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME l10n COMMAND test_l10n)
+    add_executable(test_settings tests/test_settings.c)
+    target_link_libraries(test_settings PRIVATE eik_level)
+    target_compile_options(test_settings PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME settings COMMAND test_settings)
     add_executable(test_dev_tools tests/test_dev_tools.c)
     target_link_libraries(test_dev_tools PRIVATE eik_level)
     target_compile_options(test_dev_tools PRIVATE -Wall -Wextra -Wpedantic -Werror)

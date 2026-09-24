@@ -107,13 +107,13 @@ void eik_renderer_unload(EikRenderer *renderer);
 void eik_renderer_snap_camera(EikRenderer *renderer);
 void eik_renderer_update_camera(EikRenderer *renderer, const EikLevelState *level, float dt);
 void eik_renderer_update_effects(EikRenderer *renderer, const EikLevelState *level,
-    const EikItemWorld *items, float real_dt);
+    const EikItemWorld *items, float real_dt, bool paused);
 void eik_renderer_emit_item_effect(EikRenderer *renderer, EikItemEffectKind kind,
     Vector2 centre);
 void eik_renderer_emit_debug_effects(EikRenderer *renderer, Vector2 centre);
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     const EikPlayer *player, const EikEnemyWorld *enemies, const EikItemWorld *items,
     Texture2D player_texture,
-    bool show_collision);
+    bool show_collision, bool paused);
 
 #endif

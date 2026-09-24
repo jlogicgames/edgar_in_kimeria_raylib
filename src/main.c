@@ -12,6 +12,7 @@
 #include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
+#include "settings.h"
 #include "touch.h"
 #include "ui.h"
 
@@ -40,6 +41,8 @@ typedef struct App {
     Texture2D sprite;
     Shader tint_shader;
     EikAudio audio;
+    EikAudioPaths audio_paths;
+    EikSettings settings;
     EikInputFrame input_frame;
     EikGameTime game_time;
     EikGameProgress progress;
@@ -48,6 +51,7 @@ typedef struct App {
     EikItemWorld items;
     const char *level_paths[2];
     bool shader_loaded;
+    bool audio_device_initialized;
     EikLevelState level;
     EikRenderer renderer;
     EikUi ui;
@@ -63,6 +67,11 @@ typedef struct App {
 
 static App app;
 
+#if defined(EIK_IOS)
+static void pause_audio(void);
+static void resume_audio(void);
+#endif
+
 static void app_set_state(EikAppState state)
 {
     eik_ui_set_state(&app.ui, state);
@@ -71,6 +80,64 @@ static void app_set_state(EikAppState state)
             : state == EIK_APP_OPTIONS ? EIK_AUDIO_OPTIONS : EIK_AUDIO_MAIN_MENU);
     } else if (state == EIK_APP_PLAYING) {
         eik_audio_set_state(&app.audio, EIK_AUDIO_PLAYING);
+    }
+}
+
+static void close_audio_device(void);
+
+static bool initialize_audio(void)
+{
+#if defined(EIK_IOS_SIMULATOR)
+    return true;
+#else
+    char error[256];
+
+    if (app.audio.initialized) {
+        return true;
+    }
+    InitAudioDevice();
+    if (!IsAudioDeviceReady()) {
+        (void)fprintf(stderr, "Edgard in Kimeria: cannot initialize audio device\n");
+        return false;
+    }
+    app.audio_device_initialized = true;
+    if (!eik_audio_init(&app.audio, &app.audio_paths, error, sizeof(error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", error);
+        close_audio_device();
+        return false;
+    }
+#if defined(EIK_IOS)
+    eik_ios_configure_audio_session();
+    eik_ios_set_audio_lifecycle_callbacks(pause_audio, resume_audio);
+#endif
+    return true;
+#endif
+}
+
+static void apply_display_mode(EikDisplayMode display)
+{
+#if !defined(PLATFORM_WEB) && !defined(EIK_IOS)
+    if (display == EIK_DISPLAY_FULLSCREEN && !IsWindowFullscreen()) {
+        ToggleBorderlessWindowed();
+    } else if (display == EIK_DISPLAY_WINDOWED && IsWindowFullscreen()) {
+        const int width = 1280;
+        const int height = 720;
+
+        ToggleBorderlessWindowed();
+        SetWindowSize(width, height);
+        SetWindowPosition((GetMonitorWidth(GetCurrentMonitor()) - width) / 2,
+            (GetMonitorHeight(GetCurrentMonitor()) - height) / 2);
+    }
+#else
+    (void)display;
+#endif
+}
+
+static void close_audio_device(void)
+{
+    if (app.audio_device_initialized) {
+        CloseAudioDevice();
+        app.audio_device_initialized = false;
     }
 }
 
@@ -344,6 +411,27 @@ static void handle_ui_action(EikUiAction action)
         case EIK_UI_ACTION_QUIT:
             app.running = false;
             break;
+        case EIK_UI_ACTION_START_WEB:
+            if (!initialize_audio()) {
+                app.running = false;
+            } else {
+                app_set_state(EIK_APP_MAIN_MENU);
+            }
+            break;
+        case EIK_UI_ACTION_LANGUAGE_CHANGED:
+            app.settings.language = app.ui.language;
+            if (!eik_settings_save(&app.settings)) {
+                (void)fprintf(stderr, "Edgard in Kimeria: cannot save settings\n");
+            }
+            break;
+        case EIK_UI_ACTION_TOGGLE_DISPLAY:
+            app.settings.display = app.ui.fullscreen ? EIK_DISPLAY_FULLSCREEN
+                : EIK_DISPLAY_WINDOWED;
+            apply_display_mode(app.settings.display);
+            if (!eik_settings_save(&app.settings)) {
+                (void)fprintf(stderr, "Edgard in Kimeria: cannot save settings\n");
+            }
+            break;
         case EIK_UI_ACTION_NONE:
             break;
     }
@@ -472,9 +560,10 @@ static void tick(void)
         app.show_fps = !app.show_fps;
     }
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
-    eik_renderer_update_effects(&app.renderer, &app.level, &app.items, app.game_time.real_dt);
+    eik_renderer_update_effects(&app.renderer, &app.level, &app.items, app.game_time.real_dt,
+        app.ui.state == EIK_APP_PAUSED);
     eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
-        app.sprite, app.show_collision);
+        app.sprite, app.show_collision, app.ui.state == EIK_APP_PAUSED);
     eik_ui_draw(&app.ui, app.progress.coins_collected, app.progress.lives);
     eik_touch_draw(&app.touch);
     if (app.show_fps) {
@@ -652,12 +741,19 @@ int main(int argc, char **argv)
         level_index = 1U;
     }
 
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+    eik_settings_load(&app.settings, getenv("HOME"));
+#if defined(EIK_IOS)
+    app.settings.display = EIK_DISPLAY_FULLSCREEN;
+#endif
+    app.audio_paths = (EikAudioPaths){
+        .sounds = { jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path },
+        .menu_music = menu_music_path,
+    };
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_WINDOW_HIGHDPI);
     InitWindow(1280, 720, "Edgard in Kimeria");
     SetTargetFPS(60);
-#if !defined(EIK_IOS_SIMULATOR)
-    InitAudioDevice();
-#endif
+    apply_display_mode(app.settings.display);
 
     initialize_world();
     if (!eik_level_load(app.world, &app.level, level_index, level_path,
@@ -671,7 +767,7 @@ int main(int argc, char **argv)
         free(level_zero_path);
         free(level_one_path);
 #if !defined(EIK_IOS_SIMULATOR)
-        CloseAudioDevice();
+        close_audio_device();
 #endif
         CloseWindow();
         ecs_fini(app.world);
@@ -702,7 +798,7 @@ int main(int argc, char **argv)
         free(yellow_mob_path);
         free(red_mob_path);
 #if !defined(EIK_IOS_SIMULATOR)
-        CloseAudioDevice();
+        close_audio_device();
 #endif
         CloseWindow();
         ecs_fini(app.world);
@@ -724,7 +820,7 @@ int main(int argc, char **argv)
         free(level_zero_path);
         free(level_one_path);
 #if !defined(EIK_IOS_SIMULATOR)
-        CloseAudioDevice();
+        close_audio_device();
 #endif
         CloseWindow();
         ecs_fini(app.world);
@@ -757,7 +853,7 @@ int main(int argc, char **argv)
         free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
             button_click_path, menu_music_path);
 #if !defined(EIK_IOS_SIMULATOR)
-        CloseAudioDevice();
+        close_audio_device();
 #endif
         CloseWindow();
         ecs_fini(app.world);
@@ -771,43 +867,13 @@ int main(int argc, char **argv)
             button_click_path, menu_music_path);
         UnloadTexture(app.sprite);
 #if !defined(EIK_IOS_SIMULATOR)
-        CloseAudioDevice();
+        close_audio_device();
 #endif
         CloseWindow();
         ecs_fini(app.world);
         return EXIT_FAILURE;
     }
     app.shader_loaded = true;
-#if !defined(EIK_IOS_SIMULATOR)
-    {
-        const EikAudioPaths audio_paths = {
-            .sounds = { jump_path, hit_path, collect_path, bounce_path, disappear_path,
-                button_click_path },
-            .menu_music = menu_music_path,
-        };
-
-        if (!eik_audio_init(&app.audio, &audio_paths, level_error, sizeof(level_error))) {
-            (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
-            free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
-                button_click_path, menu_music_path);
-            UnloadShader(app.tint_shader);
-            UnloadTexture(app.sprite);
-            eik_renderer_unload(&app.renderer);
-            eik_level_unload(app.world, &app.level);
-            CloseAudioDevice();
-            CloseWindow();
-            ecs_fini(app.world);
-            return EXIT_FAILURE;
-        }
-        eik_audio_set_state(&app.audio, EIK_AUDIO_PLAYING);
-#if defined(EIK_IOS)
-        eik_ios_configure_audio_session();
-        eik_ios_set_audio_lifecycle_callbacks(pause_audio, resume_audio);
-#endif
-    }
-#endif
-    free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
-        button_click_path, menu_music_path);
     {
         char *text_font_path = asset_path("fonts/QuestSquare.ttf");
         char *button_font_path = asset_path("fonts/NanoPlus.ttf");
@@ -837,10 +903,12 @@ int main(int argc, char **argv)
             UnloadTexture(app.sprite);
             eik_renderer_unload(&app.renderer);
             eik_level_unload(app.world, &app.level);
+            free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+                button_click_path, menu_music_path);
             free(level_zero_path);
             free(level_one_path);
 #if !defined(EIK_IOS_SIMULATOR)
-            CloseAudioDevice();
+            close_audio_device();
 #endif
             ecs_fini(app.world);
             CloseWindow();
@@ -853,7 +921,28 @@ int main(int argc, char **argv)
         free(knob_path);
         free(jump_button_path);
     }
+    app.ui.language = app.settings.language;
+    app.ui.fullscreen = app.settings.display == EIK_DISPLAY_FULLSCREEN;
+#if defined(PLATFORM_WEB)
+    app_set_state(EIK_APP_WEB_START);
+#else
+    if (!initialize_audio()) {
+        eik_ui_unload(&app.ui);
+        eik_touch_unload(&app.touch);
+        UnloadShader(app.tint_shader);
+        UnloadTexture(app.sprite);
+        eik_renderer_unload(&app.renderer);
+        eik_level_unload(app.world, &app.level);
+        free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+            button_click_path, menu_music_path);
+        free(level_zero_path);
+        free(level_one_path);
+        ecs_fini(app.world);
+        CloseWindow();
+        return EXIT_FAILURE;
+    }
     app_set_state(EIK_APP_MAIN_MENU);
+#endif
 
     app.running = true;
 #if defined(EIK_IOS)
@@ -873,11 +962,11 @@ int main(int argc, char **argv)
     UnloadTexture(app.sprite);
     eik_renderer_unload(&app.renderer);
     eik_level_unload(app.world, &app.level);
+    free_audio_paths(jump_path, hit_path, collect_path, bounce_path, disappear_path,
+        button_click_path, menu_music_path);
     free(level_zero_path);
     free(level_one_path);
-#if !defined(EIK_IOS_SIMULATOR)
-    CloseAudioDevice();
-#endif
+    close_audio_device();
     ecs_fini(app.world);
     CloseWindow();
 #endif

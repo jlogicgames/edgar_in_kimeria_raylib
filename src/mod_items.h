@@ -31,6 +31,19 @@ typedef enum EikFallingPhase {
     EIK_FALL_DROPPING,
 } EikFallingPhase;
 
+/* Render effects produced by item contact.  They are queued here so gameplay
+ * remains usable in headless tests without a renderer. */
+typedef enum EikItemEffectKind {
+    EIK_ITEM_EFFECT_RIPPLE,
+    EIK_ITEM_EFFECT_SHOCKWAVE,
+    EIK_ITEM_EFFECT_EXPLOSION,
+} EikItemEffectKind;
+
+typedef struct EikItemEffect {
+    EikItemEffectKind kind;
+    Vector2 centre;
+} EikItemEffect;
+
 typedef struct EikTriggerActivated {
     char target_id[32];
 } EikTriggerActivated;
@@ -62,6 +75,8 @@ typedef struct EikItemWorld {
     char overlapped_trigger[32];
     ecs_entity_t trigger_event;
     ecs_entity_t trigger_dispatch;
+    EikItemEffect effects[8];
+    size_t effect_count;
 } EikItemWorld;
 
 void eik_items_register(ecs_world_t *world, EikItemWorld *items);

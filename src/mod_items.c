@@ -185,6 +185,14 @@ static Rectangle player_box(const EikPlayer *player)
         player_hitbox.size.x, player_hitbox.size.y };
 }
 
+static void queue_effect(EikItemWorld *items, EikItemEffectKind kind, Vector2 centre)
+{
+    if (items->effect_count >= sizeof(items->effects) / sizeof(items->effects[0])) {
+        return;
+    }
+    items->effects[items->effect_count++] = (EikItemEffect){ .kind = kind, .centre = centre };
+}
+
 void eik_items_contact_step(ecs_world_t *world, EikItemWorld *items,
     EikPlayer *player, EikGameProgress *progress)
 {
@@ -192,6 +200,7 @@ void eik_items_contact_step(ecs_world_t *world, EikItemWorld *items,
     size_t index = 0U;
 
     items->overlapped_trigger[0] = '\0';
+    items->effect_count = 0U;
     if (player->routine != EIK_PLAYER_ACTIVE) {
         return;
     }
@@ -204,15 +213,27 @@ void eik_items_contact_step(ecs_world_t *world, EikItemWorld *items,
         }
         if (item->kind == EIK_ITEM_COIN) {
             progress->coins_collected++;
+            queue_effect(items, EIK_ITEM_EFFECT_RIPPLE, (Vector2){
+                item->position.x + item->size.x * 0.5F,
+                item->position.y + item->size.y * 0.5F,
+            });
             item->active = false;
             ecs_delete(world, item->entity);
         } else if (item->kind == EIK_ITEM_HEART) {
             if (progress->lives < 3) {
                 progress->lives++;
             }
+            queue_effect(items, EIK_ITEM_EFFECT_SHOCKWAVE, (Vector2){
+                item->position.x + item->size.x * 0.5F,
+                item->position.y + item->size.y * 0.5F,
+            });
             item->active = false;
             ecs_delete(world, item->entity);
         } else if (item->kind == EIK_ITEM_BOMB) {
+            queue_effect(items, EIK_ITEM_EFFECT_EXPLOSION, (Vector2){
+                item->position.x + item->size.x * 0.5F,
+                item->position.y + item->size.y * 0.5F,
+            });
             item->active = false;
             ecs_delete(world, item->entity);
             eik_player_kill(player, progress);

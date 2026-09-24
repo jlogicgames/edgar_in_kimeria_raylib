@@ -241,6 +241,7 @@ static bool advance_level(void)
 static void tick(void)
 {
     static float accumulator = 0.0F;
+    static bool capture_fx_emitted = false;
     EIKBlockSnapshot blocks[96];
     EIKSurfaceSnapshot escalators[16];
     EIKSurfaceSnapshot falling_platforms[16];
@@ -274,6 +275,15 @@ static void tick(void)
     eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
     eik_enemy_update(app.world, &app.enemies, app.game_time.real_dt);
     eik_items_contact_step(app.world, &app.items, &app.player, &app.progress);
+    {
+        size_t effect_index = 0U;
+
+        for (effect_index = 0U; effect_index < app.items.effect_count; ++effect_index) {
+            const EikItemEffect *effect = &app.items.effects[effect_index];
+
+            eik_renderer_emit_item_effect(&app.renderer, effect->kind, effect->centre);
+        }
+    }
     if (app.input_frame.interact_pressed) {
         eik_items_activate_trigger(app.world, &app.items);
     }
@@ -288,7 +298,14 @@ static void tick(void)
     if (IsKeyPressed(KEY_F1)) {
         app.show_collision = !app.show_collision;
     }
+    if (IsKeyPressed(KEY_F3) || (!capture_fx_emitted && getenv("EIK_CAPTURE_INPUT") != NULL
+            && strcmp(getenv("EIK_CAPTURE_INPUT"), "fx") == 0)) {
+        eik_renderer_emit_debug_effects(&app.renderer, (Vector2){ app.player.position.x + 24.0F,
+            app.player.position.y + 24.0F });
+        capture_fx_emitted = true;
+    }
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
+    eik_renderer_update_effects(&app.renderer, &app.level, &app.items, app.game_time.real_dt);
     eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
         app.sprite,
         app.show_collision);
@@ -494,6 +511,19 @@ int main(int argc, char **argv)
     free(red_mob_path);
     free(tileset_path);
     free(sky_path);
+    {
+        char *fog_path = asset_path("shaders/fog.fs");
+        char *shockwave_path = asset_path("shaders/shockwave.fs");
+        char *explosion_path = asset_path("shaders/bomb_explosion.fs");
+        char *screen_path = asset_path("shaders/screen_effects.fs");
+
+        eik_renderer_load_effects(&app.renderer, fog_path, shockwave_path, explosion_path,
+            screen_path);
+        free(fog_path);
+        free(shockwave_path);
+        free(explosion_path);
+        free(screen_path);
+    }
     app.level_paths[0] = level_zero_path;
     app.level_paths[1] = level_one_path;
     app.sprite = LoadTexture(sprite_path);

@@ -144,6 +144,34 @@ static bool vertical_escalator_carries_rider_vertically(void)
     return true;
 }
 
+static bool item_contact_queues_the_matching_visual_effects(void)
+{
+    ecs_world_t *world = ecs_init();
+    EikItemWorld items = { 0 };
+    EikPlayer player;
+    EikGameProgress progress = { .lives = 3 };
+    size_t index = 0U;
+
+    eik_player_spawn(&player, (Vector2){ 0.0F, 0.0F });
+    for (index = 0U; index < 3U; ++index) {
+        items.items[index] = (EikItem){
+            .entity = ecs_new(world), .active = true,
+            .kind = index == 0U ? EIK_ITEM_COIN
+                : (index == 1U ? EIK_ITEM_HEART : EIK_ITEM_BOMB),
+            .position = { 18.0F, 26.0F }, .size = { 11.0F, 22.0F },
+        };
+    }
+    items.count = 3U;
+    eik_items_contact_step(world, &items, &player, &progress);
+    CHECK(items.effect_count == 3U);
+    CHECK(items.effects[0].kind == EIK_ITEM_EFFECT_RIPPLE);
+    CHECK(items.effects[1].kind == EIK_ITEM_EFFECT_SHOCKWAVE);
+    CHECK(items.effects[2].kind == EIK_ITEM_EFFECT_EXPLOSION);
+    CHECK(items.effects[0].centre.x == 23.5F && items.effects[0].centre.y == 37.0F);
+    ecs_fini(world);
+    return true;
+}
+
 int main(void)
 {
     return matching_trigger_removes_wall()
@@ -151,5 +179,6 @@ int main(void)
             && trigger_toggles_escalator()
             && trigger_toggles_torch_at_fixed_relight_intensity()
             && trigger_only_reaches_its_own_torch()
-            && vertical_escalator_carries_rider_vertically() ? 0 : 1;
+            && vertical_escalator_carries_rider_vertically()
+            && item_contact_queues_the_matching_visual_effects() ? 0 : 1;
 }

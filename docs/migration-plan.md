@@ -440,6 +440,9 @@ platforms before any gameplay code depends on them.
    after 3 s.
 
 ### Phase 6: Effects and shaders
+**Status:** Implementation complete; iOS simulator acceptance is pending because this checkout's
+local Xcode toolchain cannot find an iOS C compiler.
+
 1. GLSL ports with the per-platform version header (R6).
 2. Particles, torch, fireflies, fog, shockwave, explosion, and the post pass with ripple and
    poison glitch (X1–X9).

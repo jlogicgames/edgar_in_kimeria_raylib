@@ -487,6 +487,9 @@ safe-area acceptance remain pending.
    menu over the T1 glitch.
 
 ### Phase 10: Dev tools and capture harness
+**Status:** Implementation complete; interactive macOS capture and Explorer inspection remain
+pending a normal desktop session.
+
 1. I3–I7 complete.
 2. **Check:** each `EIK_CAPTURE_INPUT` mode runs and exits by itself; the Flecs Explorer
    shows the live world in a dev build.

@@ -100,6 +100,11 @@ target_compile_definitions(flecs PUBLIC FLECS_CUSTOM_BUILD FLECS_SYSTEM FLECS_PI
 target_compile_definitions(flecs PRIVATE FLECS_OS_API_IMPL)
 target_include_directories(flecs SYSTEM PUBLIC third_party/flecs)
 
+option(EIK_DEV "Enable macOS-only development tools" OFF)
+if (EIK_DEV AND APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT EMSCRIPTEN)
+    target_compile_definitions(flecs PUBLIC FLECS_REST FLECS_STATS)
+endif()
+
 add_library(yxml STATIC third_party/yxml/yxml.c)
 target_include_directories(yxml SYSTEM PUBLIC third_party/yxml)
 
@@ -113,6 +118,7 @@ add_library(eik_level STATIC
     src/render.c
     src/input.c
     src/touch.c
+    src/dev_tools.c
     src/audio.c
     src/l10n.c
     src/ui.c
@@ -143,6 +149,10 @@ if (CMAKE_SYSTEM_NAME STREQUAL "iOS")
     )
 endif()
 target_include_directories(edgard_in_kimeria PRIVATE src)
+if (EIK_DEV AND APPLE AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" AND NOT EMSCRIPTEN)
+    target_compile_definitions(eik_level PRIVATE EIK_DEV=1)
+    target_compile_definitions(edgard_in_kimeria PRIVATE EIK_DEV=1)
+endif()
 set_target_properties(edgard_in_kimeria PROPERTIES
     C_STANDARD 99
     C_STANDARD_REQUIRED ON
@@ -244,4 +254,8 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_link_libraries(test_l10n PRIVATE eik_level)
     target_compile_options(test_l10n PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME l10n COMMAND test_l10n)
+    add_executable(test_dev_tools tests/test_dev_tools.c)
+    target_link_libraries(test_dev_tools PRIVATE eik_level)
+    target_compile_options(test_dev_tools PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME dev_tools COMMAND test_dev_tools)
 endif()

@@ -67,18 +67,46 @@ bool eik_input_gamepad_connected(void)
 static void apply_capture_overlay(EikInputFrame *input)
 {
     const char *mode = getenv("EIK_CAPTURE_INPUT");
+    static int last_second = -1;
+    static int last_fx_period = -1;
+    static int last_cycle_period = -1;
+    static bool checkpoint_sent = false;
+    const double time = GetTime();
+    const int second = (int)time;
 
-    if (mode == NULL) {
+    if (getenv("EIK_CAPTURE") == NULL || mode == NULL) {
         return;
     }
-    if (strcmp(mode, "run") == 0) {
-        input->horizontal = 1.0F;
-    } else if (strcmp(mode, "left") == 0) {
+    if (strcmp(mode, "left") == 0) {
         input->horizontal = -1.0F;
-    } else if (strcmp(mode, "checkpoint") == 0) {
+    } else if (strcmp(mode, "run") == 0 || strcmp(mode, "fx") == 0
+            || strcmp(mode, "cycle") == 0 || strcmp(mode, "checkpoint") == 0) {
         input->horizontal = 1.0F;
     } else if (strcmp(mode, "pause") == 0) {
-        input->pause_pressed = true;
+        if (second >= 1 && last_second != second) {
+            input->pause_pressed = true;
+        }
+    } else {
+        return;
+    }
+    if (second != last_second) {
+        input->jump_held = true;
+        if (second > 0 && second % 3 == 0) {
+            input->attack_pressed = true;
+        }
+        last_second = second;
+    }
+    if (strcmp(mode, "fx") == 0 && (int)(time / 2.0) != last_fx_period) {
+        input->debug_fx_pressed = true;
+        last_fx_period = (int)(time / 2.0);
+    }
+    if (strcmp(mode, "cycle") == 0 && (int)(time / 2.5) != last_cycle_period) {
+        input->debug_advance_level_pressed = true;
+        last_cycle_period = (int)(time / 2.5);
+    }
+    if (strcmp(mode, "checkpoint") == 0 && !checkpoint_sent && time >= 5.0) {
+        input->debug_checkpoint_pressed = true;
+        checkpoint_sent = true;
     }
 }
 

@@ -4,6 +4,7 @@
 
 #include "flecs.h"
 #include "audio.h"
+#include "dev_tools.h"
 #include "input.h"
 #include "mod_level.h"
 #include "mod_enemy.h"
@@ -51,7 +52,12 @@ typedef struct App {
     EikRenderer renderer;
     EikUi ui;
     EikTouchControls touch;
+    EikCapture capture;
+#if defined(EIK_DEV)
+    ecs_entity_t rest_dequeue_system;
+#endif
     bool show_collision;
+    bool show_fps;
     bool running;
 } App;
 
@@ -205,6 +211,25 @@ static void initialize_world(void)
     eik_level_register(app.world);
     eik_enemy_register(app.world);
     eik_items_register(app.world, &app.items);
+#if defined(EIK_DEV)
+    ECS_IMPORT(app.world, FlecsRest);
+    ECS_IMPORT(app.world, FlecsStats);
+    ecs_set(app.world, EcsWorld, EcsRest, { .port = ECS_REST_DEFAULT_PORT,
+        .ipaddr = "127.0.0.1" });
+    app.rest_dequeue_system = ecs_lookup(app.world, "flecs.rest.DequeueRest");
+    (void)fprintf(stderr, "Edgard in Kimeria: Flecs Explorer listening at http://127.0.0.1:%d\n",
+        ECS_REST_DEFAULT_PORT);
+#endif
+}
+
+static void log_tilemap_debug(const EikLevelState *level)
+{
+    if (getenv("EIK_DEBUG_TILEMAP") == NULL) {
+        return;
+    }
+    (void)fprintf(stderr, "TILEDBG level=%zu size=%ux%u tiles=%zu objects=%zu tileset=%s\n",
+        level->index, level->map.width, level->map.height, level->map.tile_count,
+        level->map.object_count, level->map.tileset_source);
 }
 
 static EIKBlockKind block_kind_from_object(const EikTmxObject *object)
@@ -274,6 +299,7 @@ static bool advance_level(void)
         return false;
     }
     app.progress.current_level = next_index;
+    log_tilemap_debug(&app.level);
     eik_player_spawn(&app.player, app.level.player_position);
     eik_enemy_world_load(app.world, &app.enemies, &app.level);
     eik_items_world_load(app.world, &app.items, &app.level);
@@ -281,15 +307,17 @@ static bool advance_level(void)
     return true;
 }
 
-static bool start_new_run(void)
+static bool start_new_run(size_t level_index)
 {
     char error[256];
 
-    if (!eik_level_load(app.world, &app.level, 0U, app.level_paths[0], error, sizeof(error))) {
+    if (!eik_level_load(app.world, &app.level, level_index, app.level_paths[level_index], error,
+            sizeof(error))) {
         (void)fprintf(stderr, "Edgard in Kimeria: %s\n", error);
         return false;
     }
-    app.progress = (EikGameProgress){ .lives = 3, .current_level = 0U };
+    app.progress = (EikGameProgress){ .lives = 3, .current_level = level_index };
+    log_tilemap_debug(&app.level);
     eik_player_spawn(&app.player, app.level.player_position);
     app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
     eik_enemy_world_load(app.world, &app.enemies, &app.level);
@@ -303,7 +331,7 @@ static void handle_ui_action(EikUiAction action)
 {
     switch (action) {
         case EIK_UI_ACTION_PLAY:
-            if (!start_new_run()) {
+            if (!start_new_run(0U)) {
                 app.running = false;
             }
             break;
@@ -324,7 +352,6 @@ static void handle_ui_action(EikUiAction action)
 static void tick(void)
 {
     static float accumulator = 0.0F;
-    static bool capture_fx_emitted = false;
     EIKBlockSnapshot blocks[96];
     EIKSurfaceSnapshot escalators[16];
     EIKSurfaceSnapshot falling_platforms[16];
@@ -417,15 +444,32 @@ static void tick(void)
         app_set_state(EIK_APP_GAME_OVER);
     }
     ecs_run_pipeline(app.world, app.update_pipeline, app.game_time.real_dt);
+#if defined(EIK_DEV)
+    if (app.rest_dequeue_system != 0U) {
+        ecs_run(app.world, app.rest_dequeue_system, app.game_time.real_dt, NULL);
+    }
+#endif
 
     if (IsKeyPressed(KEY_F1)) {
         app.show_collision = !app.show_collision;
     }
-    if (IsKeyPressed(KEY_F3) || (!capture_fx_emitted && getenv("EIK_CAPTURE_INPUT") != NULL
-            && strcmp(getenv("EIK_CAPTURE_INPUT"), "fx") == 0)) {
+    if (IsKeyPressed(KEY_F2)) {
+        app.player.invulnerable = !app.player.invulnerable;
+    }
+    if (IsKeyPressed(KEY_F3) || app.input_frame.debug_fx_pressed) {
         eik_renderer_emit_debug_effects(&app.renderer, (Vector2){ app.player.position.x + 24.0F,
             app.player.position.y + 24.0F });
-        capture_fx_emitted = true;
+    }
+    if ((IsKeyPressed(KEY_F4) || app.input_frame.debug_advance_level_pressed)
+            && app.ui.state == EIK_APP_PLAYING && !advance_level()) {
+        app.running = false;
+    }
+    if ((IsKeyPressed(KEY_F5) || app.input_frame.debug_checkpoint_pressed)
+            && app.ui.state == EIK_APP_PLAYING) {
+        eik_player_reach_checkpoint(&app.player);
+    }
+    if (IsKeyPressed(KEY_F6)) {
+        app.show_fps = !app.show_fps;
     }
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
     eik_renderer_update_effects(&app.renderer, &app.level, &app.items, app.game_time.real_dt);
@@ -433,7 +477,34 @@ static void tick(void)
         app.sprite, app.show_collision);
     eik_ui_draw(&app.ui, app.progress.coins_collected, app.progress.lives);
     eik_touch_draw(&app.touch);
+    if (app.show_fps) {
+        const int fps = GetFPS();
+        const char *label = TextFormat("%d FPS", fps);
+
+        DrawText(label, GetScreenWidth() - MeasureText(label, 20) - 10, 10, 20, LIME);
+    }
     EndDrawing();
+    if (eik_capture_should_take(&app.capture, app.game_time.real_dt)) {
+        char capture_path[EIK_CAPTURE_PATH_MAX];
+
+        if (!eik_capture_path(&app.capture, capture_path, sizeof(capture_path))) {
+            (void)fprintf(stderr, "Edgard in Kimeria: capture path is too long\n");
+            app.running = false;
+        } else {
+            TakeScreenshot(capture_path);
+        }
+    }
+    if (eik_capture_should_start(&app.capture)) {
+        eik_capture_mark_started(&app.capture);
+        if (app.capture.about) {
+            app_set_state(EIK_APP_ABOUT);
+        } else if (!start_new_run(app.capture.level)) {
+            app.running = false;
+        }
+    }
+    if (app.capture.enabled && app.capture.started && app.capture.remaining == 0U) {
+        app.running = false;
+    }
     eik_audio_update(&app.audio, app.game_time.real_dt);
 
     if (WindowShouldClose()) {
@@ -461,6 +532,11 @@ int main(int argc, char **argv)
     const char *level_path = level_zero_path;
     size_t level_index = 0U;
     char level_error[256];
+
+    if (!eik_capture_configure(&app.capture, level_error, sizeof(level_error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+        return EXIT_FAILURE;
+    }
 
     if (!FileExists(sprite_path)) {
         fail_asset_load(sprite_path);
@@ -571,7 +647,7 @@ int main(int argc, char **argv)
         return EXIT_SUCCESS;
     }
 
-    if (getenv("EIK_CAPTURE_LEVEL") != NULL && strcmp(getenv("EIK_CAPTURE_LEVEL"), "1") == 0) {
+    if (app.capture.enabled && app.capture.level == 1U) {
         level_path = level_one_path;
         level_index = 1U;
     }
@@ -607,6 +683,9 @@ int main(int argc, char **argv)
     eik_enemy_world_load(app.world, &app.enemies, &app.level);
     eik_items_world_load(app.world, &app.items, &app.level);
     app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
+    app.show_collision = getenv("EIK_DEBUG_DRAW") != NULL;
+    app.show_fps = getenv("EIK_SHOW_FPS") != NULL;
+    log_tilemap_debug(&app.level);
     eik_renderer_snap_camera(&app.renderer);
     if (!eik_renderer_init(&app.renderer, tileset_path, sky_path,
             level_error, sizeof(level_error))) {

@@ -9,6 +9,9 @@ typedef struct EikInputFrame {
     bool attack_pressed;
     bool interact_pressed;
     bool pause_pressed;
+    bool debug_fx_pressed;
+    bool debug_advance_level_pressed;
+    bool debug_checkpoint_pressed;
 } EikInputFrame;
 
 /* Reads every supported physical control, then applies EIK_CAPTURE_INPUT. */

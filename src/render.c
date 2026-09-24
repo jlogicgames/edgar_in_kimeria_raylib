@@ -775,6 +775,47 @@ static void draw_world_effects(EikRenderer *renderer, const EikItemWorld *items,
     draw_transient_effects(renderer, camera);
 }
 
+static void draw_hitbox(Rectangle box, Vector2 camera, Color color)
+{
+    DrawRectangleLinesEx((Rectangle){ box.x - camera.x, box.y - camera.y, box.width, box.height },
+        1.0F, color);
+}
+
+static void draw_actor_hitboxes(const EikPlayer *player, const EikEnemyWorld *enemies,
+    Vector2 camera)
+{
+    const EIKHitbox player_hitbox = { .offset = { 18.0F, 26.0F }, .size = { 11.0F, 22.0F } };
+    const EIKHitbox mob_hitbox = { .offset = { 10.0F, 6.0F }, .size = { 14.0F, 26.0F } };
+    size_t index = 0U;
+
+    if (player != NULL) {
+        const Vector2 position = eik_mirrored_pos(player->position, &player_hitbox, 48.0F,
+            player->facing_right);
+
+        draw_hitbox((Rectangle){ position.x + player_hitbox.offset.x,
+            position.y + player_hitbox.offset.y, player_hitbox.size.x, player_hitbox.size.y },
+            camera, RED);
+    }
+    for (index = 0U; index < enemies->count; ++index) {
+        const EikEnemy *enemy = &enemies->enemies[index];
+
+        if (enemy->dying) {
+            continue;
+        }
+        if (enemy->kind == EIK_ENEMY_BAT) {
+            DrawCircleLines((int)(enemy->position.x + 8.0F - camera.x),
+                (int)(enemy->position.y + 8.0F - camera.y), 8.0F, RED);
+        } else {
+            const Vector2 position = eik_mirrored_pos(enemy->position, &mob_hitbox,
+                enemy->size.x, enemy->facing_right);
+
+            draw_hitbox((Rectangle){ position.x + mob_hitbox.offset.x,
+                position.y + mob_hitbox.offset.y, mob_hitbox.size.x, mob_hitbox.size.y },
+                camera, RED);
+        }
+    }
+}
+
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     const EikPlayer *player, const EikEnemyWorld *enemies, const EikItemWorld *items,
     Texture2D player_texture,
@@ -811,6 +852,7 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     }
     if (show_collision) {
         draw_collision_overlay(level, renderer->camera_top_left);
+        draw_actor_hitboxes(player, enemies, renderer->camera_top_left);
     }
     EndTextureMode();
 
@@ -850,6 +892,6 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     DrawText(level->index == 0U ? "forest-1" : "forest", (int)view_x + 12,
         (int)view_y + 12, 12, RAYWHITE);
     if (show_collision) {
-        DrawText("F1 collision boxes", (int)view_x + 12, (int)view_y + 28, 12, GREEN);
+        DrawText("F1 debug draw", (int)view_x + 12, (int)view_y + 28, 12, GREEN);
     }
 }

@@ -32,6 +32,15 @@ bool eik_renderer_init(EikRenderer *renderer, const char *tileset_path, const ch
 
 void eik_renderer_unload(EikRenderer *renderer)
 {
+    if (renderer->red_mob.id != 0U) {
+        UnloadTexture(renderer->red_mob);
+    }
+    if (renderer->yellow_mob.id != 0U) {
+        UnloadTexture(renderer->yellow_mob);
+    }
+    if (renderer->bat.id != 0U) {
+        UnloadTexture(renderer->bat);
+    }
     if (renderer->world_target.id != 0U) {
         UnloadRenderTexture(renderer->world_target);
     }
@@ -42,6 +51,34 @@ void eik_renderer_unload(EikRenderer *renderer)
         UnloadTexture(renderer->tileset);
     }
     *renderer = (EikRenderer){ 0 };
+}
+
+bool eik_renderer_load_enemy_textures(EikRenderer *renderer, const char *bat_path,
+    const char *yellow_mob_path, const char *red_mob_path, char *error, size_t error_size)
+{
+    renderer->bat = LoadTexture(bat_path);
+    renderer->yellow_mob = LoadTexture(yellow_mob_path);
+    renderer->red_mob = LoadTexture(red_mob_path);
+    if (renderer->bat.id == 0U || renderer->yellow_mob.id == 0U || renderer->red_mob.id == 0U) {
+        (void)snprintf(error, error_size, "cannot load Phase 4 enemy textures");
+        if (renderer->red_mob.id != 0U) {
+            UnloadTexture(renderer->red_mob);
+        }
+        if (renderer->yellow_mob.id != 0U) {
+            UnloadTexture(renderer->yellow_mob);
+        }
+        if (renderer->bat.id != 0U) {
+            UnloadTexture(renderer->bat);
+        }
+        renderer->bat = (Texture2D){ 0 };
+        renderer->yellow_mob = (Texture2D){ 0 };
+        renderer->red_mob = (Texture2D){ 0 };
+        return false;
+    }
+    SetTextureFilter(renderer->bat, TEXTURE_FILTER_POINT);
+    SetTextureFilter(renderer->yellow_mob, TEXTURE_FILTER_POINT);
+    SetTextureFilter(renderer->red_mob, TEXTURE_FILTER_POINT);
+    return true;
 }
 
 void eik_renderer_snap_camera(EikRenderer *renderer)
@@ -135,8 +172,43 @@ static void draw_collision_overlay(const EikLevelState *level, Vector2 camera)
     }
 }
 
+static Texture2D enemy_texture(const EikRenderer *renderer, const EikEnemy *enemy)
+{
+    if (enemy->kind == EIK_ENEMY_BAT) {
+        return renderer->bat;
+    }
+    return enemy->kind == EIK_ENEMY_YELLOW_MOB ? renderer->yellow_mob : renderer->red_mob;
+}
+
+static void draw_enemies(const EikRenderer *renderer, const EikEnemyWorld *enemies,
+    Vector2 camera)
+{
+    size_t index = 0U;
+
+    if (enemies == NULL) {
+        return;
+    }
+    for (index = 0U; index < enemies->count; ++index) {
+        const EikEnemy *enemy = &enemies->enemies[index];
+        Texture2D texture = enemy_texture(renderer, enemy);
+        Rectangle source = eik_enemy_frame_rect(enemy);
+        const Rectangle destination = { enemy->position.x - camera.x,
+            enemy->position.y - camera.y, enemy->size.x, enemy->size.y };
+
+        if (texture.id == 0U) {
+            continue;
+        }
+        if (!enemy->facing_right) {
+            source.x += source.width;
+            source.width = -source.width;
+        }
+        DrawTexturePro(texture, source, destination, (Vector2){ 0.0F, 0.0F }, 0.0F, WHITE);
+    }
+}
+
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
-    const EikPlayer *player, Texture2D player_texture, bool show_collision)
+    const EikPlayer *player, const EikEnemyWorld *enemies, Texture2D player_texture,
+    bool show_collision)
 {
     const float scale_x = (float)GetScreenWidth() / EIK_LOGICAL_WIDTH;
     const float scale_y = (float)GetScreenHeight() / EIK_LOGICAL_HEIGHT;
@@ -152,6 +224,7 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     DrawTexture(renderer->sky, sky_x, 0, WHITE);
     DrawTexture(renderer->sky, sky_x + renderer->sky.width, 0, WHITE);
     draw_tiles(renderer, &level->map, renderer->camera_top_left);
+    draw_enemies(renderer, enemies, renderer->camera_top_left);
     if (player != NULL && player_texture.id != 0U && level->has_player) {
         Rectangle source = eik_player_frame_rect(&player->animation);
         const Rectangle destination = { player->position.x - renderer->camera_top_left.x,

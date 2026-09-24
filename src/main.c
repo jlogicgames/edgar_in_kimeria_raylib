@@ -5,6 +5,7 @@
 #include "flecs.h"
 #include "input.h"
 #include "mod_level.h"
+#include "mod_enemy.h"
 #include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
@@ -34,6 +35,7 @@ typedef struct App {
     EikGameTime game_time;
     EikGameProgress progress;
     EikPlayer player;
+    EikEnemyWorld enemies;
     bool shader_loaded;
     bool sound_loaded;
     EikLevelState level;
@@ -155,6 +157,7 @@ static void initialize_world(void)
     app.fixed_pipeline = make_pipeline(app.world, "FixedPipeline", app.fixed_phase);
     app.update_pipeline = make_pipeline(app.world, "UpdatePipeline", app.update_phase);
     eik_level_register(app.world);
+    eik_enemy_register(app.world);
 }
 
 static EIKBlockKind block_kind_from_object(const EikTmxObject *object)
@@ -200,8 +203,9 @@ static void tick(void)
     EIKCollisionWorld world;
     const float raw_dt = GetFrameTime();
 
-    eik_game_time_begin_frame(&app.game_time, raw_dt);
     app.input_frame = eik_input_read();
+    app.game_time.time_scale = eik_enemy_time_scale(&app.enemies, &app.player);
+    eik_game_time_begin_frame(&app.game_time, raw_dt);
     if (app.input_frame.pause_pressed) {
         app.running = false;
     }
@@ -211,10 +215,13 @@ static void tick(void)
     while (accumulator >= app.game_time.fixed_dt) {
         eik_player_fixed_step(&app.player, &app.progress, &app.input_frame, &world,
             app.game_time.fixed_dt);
+        eik_enemy_fixed_step(app.world, &app.enemies, &app.player, &app.progress, &world,
+            app.game_time.fixed_dt);
         ecs_run_pipeline(app.world, app.fixed_pipeline, app.game_time.fixed_dt);
         accumulator -= app.game_time.fixed_dt;
     }
     eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
+    eik_enemy_update(app.world, &app.enemies, app.game_time.real_dt);
     app.level.player_position = app.player.position;
     app.level.has_player = !app.progress.game_over;
     ecs_run_pipeline(app.world, app.update_pipeline, app.game_time.real_dt);
@@ -223,7 +230,8 @@ static void tick(void)
         app.show_collision = !app.show_collision;
     }
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
-    eik_renderer_draw(&app.renderer, &app.level, &app.player, app.sprite, app.show_collision);
+    eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, app.sprite,
+        app.show_collision);
 
     if (WindowShouldClose()) {
         app.running = false;
@@ -236,6 +244,9 @@ int main(int argc, char **argv)
     char *sound_path = asset_path("audio/jump.wav");
     char *tileset_path = asset_path("images/Tileset/Tileset.png");
     char *sky_path = asset_path("images/background/sky.png");
+    char *bat_path = asset_path("images/enemy/Bat.png");
+    char *yellow_mob_path = asset_path("images/enemy/yellow_mob.png");
+    char *red_mob_path = asset_path("images/enemy/Mobs.png");
     char *level_zero_path = asset_path("tiles/forest-1.tmx");
     char *level_one_path = asset_path("tiles/forest.tmx");
     const char *level_path = level_zero_path;
@@ -262,6 +273,15 @@ int main(int argc, char **argv)
         free(level_one_path);
         fail_asset_load(sky_path);
     }
+    if (!FileExists(bat_path)) {
+        fail_asset_load(bat_path);
+    }
+    if (!FileExists(yellow_mob_path)) {
+        fail_asset_load(yellow_mob_path);
+    }
+    if (!FileExists(red_mob_path)) {
+        fail_asset_load(red_mob_path);
+    }
     if (!FileExists(level_zero_path)) {
         free(sprite_path);
         free(sound_path);
@@ -285,6 +305,9 @@ int main(int argc, char **argv)
         free(sky_path);
         free(level_zero_path);
         free(level_one_path);
+        free(bat_path);
+        free(yellow_mob_path);
+        free(red_mob_path);
         return EXIT_SUCCESS;
     }
     if (argc == 2 && strcmp(argv[1], "--check-scaffold") == 0) {
@@ -294,6 +317,9 @@ int main(int argc, char **argv)
         free(sky_path);
         free(level_zero_path);
         free(level_one_path);
+        free(bat_path);
+        free(yellow_mob_path);
+        free(red_mob_path);
         initialize_world();
         ecs_run_pipeline(app.world, app.pre_pipeline, 0.0F);
         ecs_run_pipeline(app.world, app.fixed_pipeline, 0.0F);
@@ -307,6 +333,9 @@ int main(int argc, char **argv)
         free(sound_path);
         free(tileset_path);
         free(sky_path);
+        free(bat_path);
+        free(yellow_mob_path);
+        free(red_mob_path);
         initialize_world();
         if (!eik_level_load(app.world, &app.level, 0U, level_zero_path,
                 level_error, sizeof(level_error))) {
@@ -355,11 +384,36 @@ int main(int argc, char **argv)
     app.game_time.time_scale = 1.0F;
     app.progress = (EikGameProgress){ .lives = 3, .current_level = level_index };
     eik_player_spawn(&app.player, app.level.player_position);
+    eik_enemy_world_load(app.world, &app.enemies, &app.level);
     app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
     eik_renderer_snap_camera(&app.renderer);
     if (!eik_renderer_init(&app.renderer, tileset_path, sky_path,
             level_error, sizeof(level_error))) {
         (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+        eik_level_unload(app.world, &app.level);
+        free(sprite_path);
+        free(sound_path);
+        free(tileset_path);
+        free(sky_path);
+        free(level_zero_path);
+        free(level_one_path);
+        free(bat_path);
+        free(yellow_mob_path);
+        free(red_mob_path);
+#if !defined(EIK_IOS_SIMULATOR)
+        CloseAudioDevice();
+#endif
+        CloseWindow();
+        ecs_fini(app.world);
+        return EXIT_FAILURE;
+    }
+    if (!eik_renderer_load_enemy_textures(&app.renderer, bat_path, yellow_mob_path,
+            red_mob_path, level_error, sizeof(level_error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", level_error);
+        free(bat_path);
+        free(yellow_mob_path);
+        free(red_mob_path);
+        eik_renderer_unload(&app.renderer);
         eik_level_unload(app.world, &app.level);
         free(sprite_path);
         free(sound_path);
@@ -374,6 +428,9 @@ int main(int argc, char **argv)
         ecs_fini(app.world);
         return EXIT_FAILURE;
     }
+    free(bat_path);
+    free(yellow_mob_path);
+    free(red_mob_path);
     free(tileset_path);
     free(sky_path);
     free(level_zero_path);

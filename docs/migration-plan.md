@@ -420,6 +420,8 @@ platforms before any gameplay code depends on them.
    the third death, and lives don't refill at a checkpoint.
 
 ### Phase 4: Enemies and bullet time
+**Status:** Complete.
+
 1. Bat, Yellow and Red mobs (E1–E9), the sword, `EnemyStomped` as a Flecs event.
 2. Bullet time (P12) through `time_scale`; animation keeps real-time speed.
 3. **Check:** a bat pass slows physics but not animation; the Red mob's swing kills

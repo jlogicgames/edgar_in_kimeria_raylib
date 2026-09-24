@@ -53,6 +53,18 @@ void eik_player_kill(EikPlayer *player, EikGameProgress *progress)
     }
 }
 
+void eik_player_reach_checkpoint(EikPlayer *player)
+{
+    if (player->routine != EIK_PLAYER_ACTIVE) {
+        return;
+    }
+    player->routine = EIK_PLAYER_LEAVING_LEVEL;
+    player->routine_elapsed = 0.0F;
+    player->attacking = false;
+    player->state = EIK_ACTOR_DISAPPEARING;
+    eik_anim_reset(&player->animation, player->state);
+}
+
 void eik_player_update(EikPlayer *player, EikGameProgress *progress, float real_dt)
 {
     eik_anim_advance(&player->animation, player->state, real_dt);
@@ -106,17 +118,38 @@ static void update_state(EikPlayer *player, const EikInputFrame *input)
     player->state = state;
 }
 
-void eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
+static void apply_escalator_carry(EikPlayer *player, const EIKCollisionWorld *world,
+    float fixed_dt)
+{
+    size_t index = 0U;
+
+    if (!player->grounded || !player->contact.on_escalator) {
+        return;
+    }
+    for (index = 0U; index < world->escalator_count; ++index) {
+        const EIKSurfaceSnapshot *surface = &world->escalators[index];
+
+        if (surface->id == player->contact.escalator_id) {
+            player->position.x += surface->velocity.x * fixed_dt;
+            player->position.y += surface->velocity.y * fixed_dt;
+            return;
+        }
+    }
+}
+
+EIKVerticalOutcome eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
     const EikInputFrame *input, const EIKCollisionWorld *world, float fixed_dt)
 {
     EIKActorBody body;
+    EIKVerticalOutcome outcome = { 0 };
 
     if (player->wall_jump_timer > 0.0F) {
         player->wall_jump_timer -= fixed_dt;
     }
     if (player->routine != EIK_PLAYER_ACTIVE || progress->game_over) {
-        return;
+        return outcome;
     }
+    apply_escalator_carry(player, world, fixed_dt);
     if (input->attack_pressed && !player->attacking && player->grounded
             && !input->jump_held && !player->contact.clambering) {
         player->attacking = true;
@@ -154,7 +187,7 @@ void eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
     }
     if (player->position.y > EIK_DEATH_PLANE_Y) {
         eik_player_kill(player, progress);
-        return;
+        return outcome;
     }
     body = (EIKActorBody){
         .position = &player->position, .velocity = &player->velocity,
@@ -163,7 +196,8 @@ void eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
     };
     eik_resolve_horizontal(&body, world);
     eik_apply_gravity(&player->velocity, &player->position, &player_gravity, fixed_dt);
-    (void)eik_resolve_vertical(&body, world);
+    outcome = eik_resolve_vertical(&body, world);
+    return outcome;
 }
 
 Rectangle eik_player_attack_rect(const EikPlayer *player)

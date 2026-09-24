@@ -48,8 +48,9 @@ typedef struct EikPlayer {
 void eik_game_time_begin_frame(EikGameTime *time, float real_dt);
 void eik_player_spawn(EikPlayer *player, Vector2 start_position);
 void eik_player_kill(EikPlayer *player, EikGameProgress *progress);
+void eik_player_reach_checkpoint(EikPlayer *player);
 void eik_player_update(EikPlayer *player, EikGameProgress *progress, float real_dt);
-void eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
+EIKVerticalOutcome eik_player_fixed_step(EikPlayer *player, EikGameProgress *progress,
     const EikInputFrame *input, const EIKCollisionWorld *world, float fixed_dt);
 Rectangle eik_player_attack_rect(const EikPlayer *player);
 

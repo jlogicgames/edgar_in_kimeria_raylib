@@ -6,6 +6,7 @@
 #include "input.h"
 #include "mod_level.h"
 #include "mod_enemy.h"
+#include "mod_items.h"
 #include "mod_player.h"
 #include "raylib.h"
 #include "render.h"
@@ -36,6 +37,8 @@ typedef struct App {
     EikGameProgress progress;
     EikPlayer player;
     EikEnemyWorld enemies;
+    EikItemWorld items;
+    const char *level_paths[2];
     bool shader_loaded;
     bool sound_loaded;
     EikLevelState level;
@@ -158,6 +161,7 @@ static void initialize_world(void)
     app.update_pipeline = make_pipeline(app.world, "UpdatePipeline", app.update_phase);
     eik_level_register(app.world);
     eik_enemy_register(app.world);
+    eik_items_register(app.world, &app.items);
 }
 
 static EIKBlockKind block_kind_from_object(const EikTmxObject *object)
@@ -175,7 +179,9 @@ static EIKBlockKind block_kind_from_object(const EikTmxObject *object)
 }
 
 static EIKCollisionWorld collision_snapshot(const EikLevelState *level,
-    EIKBlockSnapshot *blocks, size_t capacity)
+    const EikItemWorld *items, EIKBlockSnapshot *blocks, size_t capacity,
+    EIKSurfaceSnapshot *escalators, size_t escalator_capacity,
+    EIKSurfaceSnapshot *falling_platforms, size_t falling_platform_capacity)
 {
     size_t object_index = 0U;
     size_t block_count = 0U;
@@ -193,13 +199,51 @@ static EIKCollisionWorld collision_snapshot(const EikLevelState *level,
             .kind = block_kind_from_object(object),
         };
     }
-    return (EIKCollisionWorld){ .blocks = blocks, .block_count = block_count };
+    for (object_index = 0U; object_index < items->count && block_count < capacity;
+            ++object_index) {
+        const EikItem *item = &items->items[object_index];
+
+        if (item->active && item->kind == EIK_ITEM_WALL) {
+            blocks[block_count++] = (EIKBlockSnapshot){
+                .id = (uint32_t)object_index, .position = item->position, .size = item->size,
+                .kind = EIK_BLOCK_WALL,
+            };
+        }
+    }
+    {
+        EIKCollisionWorld item_world = eik_items_collision_world(items, escalators,
+            escalator_capacity, falling_platforms, falling_platform_capacity);
+
+        item_world.blocks = blocks;
+        item_world.block_count = block_count;
+        return item_world;
+    }
+}
+
+static bool advance_level(void)
+{
+    const size_t next_index = (app.progress.current_level + 1U) % 2U;
+    char error[256];
+
+    if (!eik_level_load(app.world, &app.level, next_index, app.level_paths[next_index], error,
+            sizeof(error))) {
+        (void)fprintf(stderr, "Edgard in Kimeria: %s\n", error);
+        return false;
+    }
+    app.progress.current_level = next_index;
+    eik_player_spawn(&app.player, app.level.player_position);
+    eik_enemy_world_load(app.world, &app.enemies, &app.level);
+    eik_items_world_load(app.world, &app.items, &app.level);
+    eik_renderer_snap_camera(&app.renderer);
+    return true;
 }
 
 static void tick(void)
 {
     static float accumulator = 0.0F;
-    EIKBlockSnapshot blocks[64];
+    EIKBlockSnapshot blocks[96];
+    EIKSurfaceSnapshot escalators[16];
+    EIKSurfaceSnapshot falling_platforms[16];
     EIKCollisionWorld world;
     const float raw_dt = GetFrameTime();
 
@@ -210,11 +254,18 @@ static void tick(void)
         app.running = false;
     }
     ecs_run_pipeline(app.world, app.pre_pipeline, app.game_time.real_dt);
-    world = collision_snapshot(&app.level, blocks, sizeof(blocks) / sizeof(blocks[0]));
+    eik_items_virtual_step(&app.items, app.game_time.virtual_dt);
+    world = collision_snapshot(&app.level, &app.items, blocks, sizeof(blocks) / sizeof(blocks[0]),
+        escalators, sizeof(escalators) / sizeof(escalators[0]), falling_platforms,
+        sizeof(falling_platforms) / sizeof(falling_platforms[0]));
     accumulator += app.game_time.virtual_dt;
     while (accumulator >= app.game_time.fixed_dt) {
-        eik_player_fixed_step(&app.player, &app.progress, &app.input_frame, &world,
-            app.game_time.fixed_dt);
+        const EIKVerticalOutcome outcome = eik_player_fixed_step(&app.player, &app.progress,
+            &app.input_frame, &world, app.game_time.fixed_dt);
+
+        if (outcome.trigger_fall) {
+            eik_items_trigger_fall(&app.items, outcome.falling_platform_id);
+        }
         eik_enemy_fixed_step(app.world, &app.enemies, &app.player, &app.progress, &world,
             app.game_time.fixed_dt);
         ecs_run_pipeline(app.world, app.fixed_pipeline, app.game_time.fixed_dt);
@@ -222,6 +273,14 @@ static void tick(void)
     }
     eik_player_update(&app.player, &app.progress, app.game_time.real_dt);
     eik_enemy_update(app.world, &app.enemies, app.game_time.real_dt);
+    eik_items_contact_step(app.world, &app.items, &app.player, &app.progress);
+    if (app.input_frame.interact_pressed) {
+        eik_items_activate_trigger(app.world, &app.items);
+    }
+    if (app.player.routine == EIK_PLAYER_LEAVING_LEVEL
+            && app.player.routine_elapsed >= 3.0F && !advance_level()) {
+        app.running = false;
+    }
     app.level.player_position = app.player.position;
     app.level.has_player = !app.progress.game_over;
     ecs_run_pipeline(app.world, app.update_pipeline, app.game_time.real_dt);
@@ -230,7 +289,8 @@ static void tick(void)
         app.show_collision = !app.show_collision;
     }
     eik_renderer_update_camera(&app.renderer, &app.level, app.game_time.real_dt);
-    eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, app.sprite,
+    eik_renderer_draw(&app.renderer, &app.level, &app.player, &app.enemies, &app.items,
+        app.sprite,
         app.show_collision);
 
     if (WindowShouldClose()) {
@@ -385,6 +445,7 @@ int main(int argc, char **argv)
     app.progress = (EikGameProgress){ .lives = 3, .current_level = level_index };
     eik_player_spawn(&app.player, app.level.player_position);
     eik_enemy_world_load(app.world, &app.enemies, &app.level);
+    eik_items_world_load(app.world, &app.items, &app.level);
     app.player.invulnerable = getenv("EIK_INVULNERABLE") != NULL;
     eik_renderer_snap_camera(&app.renderer);
     if (!eik_renderer_init(&app.renderer, tileset_path, sky_path,
@@ -433,8 +494,8 @@ int main(int argc, char **argv)
     free(red_mob_path);
     free(tileset_path);
     free(sky_path);
-    free(level_zero_path);
-    free(level_one_path);
+    app.level_paths[0] = level_zero_path;
+    app.level_paths[1] = level_one_path;
     app.sprite = LoadTexture(sprite_path);
     if (app.sprite.id == 0U) {
         (void)fprintf(stderr, "Edgard in Kimeria: raylib rejected asset: %s\n", sprite_path);
@@ -495,6 +556,8 @@ int main(int argc, char **argv)
     UnloadTexture(app.sprite);
     eik_renderer_unload(&app.renderer);
     eik_level_unload(app.world, &app.level);
+    free(level_zero_path);
+    free(level_one_path);
 #if !defined(EIK_IOS_SIMULATOR)
     CloseAudioDevice();
 #endif

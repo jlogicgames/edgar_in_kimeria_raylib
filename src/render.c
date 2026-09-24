@@ -206,8 +206,63 @@ static void draw_enemies(const EikRenderer *renderer, const EikEnemyWorld *enemi
     }
 }
 
+static void draw_items(const EikItemWorld *items, Vector2 camera, bool debug)
+{
+    size_t index = 0U;
+
+    if (items == NULL) {
+        return;
+    }
+    for (index = 0U; index < items->count; ++index) {
+        const EikItem *item = &items->items[index];
+        const Rectangle box = { item->position.x - camera.x, item->position.y - camera.y,
+            item->size.x, item->size.y };
+        const Vector2 centre = { box.x + box.width * 0.5F, box.y + box.height * 0.5F };
+
+        if (!item->active) {
+            continue;
+        }
+        switch (item->kind) {
+        case EIK_ITEM_COIN:
+            DrawCircleV(centre, box.width * 0.4F, GOLD);
+            break;
+        case EIK_ITEM_HEART:
+            DrawRectangleRec(box, RED);
+            break;
+        case EIK_ITEM_BOMB:
+            DrawCircleV(centre, box.width * 0.45F, DARKGRAY);
+            break;
+        case EIK_ITEM_TORCH:
+            if (item->intensity > 0.0F) {
+                DrawCircleV(centre, 3.0F + item->intensity * 0.03F, GREEN);
+            }
+            break;
+        case EIK_ITEM_ESCALATOR:
+            DrawRectangleRec(box, item->running ? GRAY : DARKGRAY);
+            break;
+        case EIK_ITEM_FALLING_PLATFORM:
+            DrawRectangleRec(box, item->fall_phase == EIK_FALL_WARNING ? ORANGE : LIGHTGRAY);
+            if (item->fall_phase == EIK_FALL_WARNING) {
+                DrawCircleV(centre, 5.0F, GREEN);
+            }
+            break;
+        case EIK_ITEM_CHECKPOINT:
+        case EIK_ITEM_TRIGGER:
+        case EIK_ITEM_WALL:
+            if (debug) {
+                DrawRectangleLinesEx(box, 1.0F, GREEN);
+            }
+            break;
+        }
+        if (debug && (item->kind == EIK_ITEM_CHECKPOINT || item->kind == EIK_ITEM_TRIGGER)) {
+            DrawRectangleLinesEx(box, 1.0F, YELLOW);
+        }
+    }
+}
+
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
-    const EikPlayer *player, const EikEnemyWorld *enemies, Texture2D player_texture,
+    const EikPlayer *player, const EikEnemyWorld *enemies, const EikItemWorld *items,
+    Texture2D player_texture,
     bool show_collision)
 {
     const float scale_x = (float)GetScreenWidth() / EIK_LOGICAL_WIDTH;
@@ -224,6 +279,7 @@ void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
     DrawTexture(renderer->sky, sky_x, 0, WHITE);
     DrawTexture(renderer->sky, sky_x + renderer->sky.width, 0, WHITE);
     draw_tiles(renderer, &level->map, renderer->camera_top_left);
+    draw_items(items, renderer->camera_top_left, show_collision);
     draw_enemies(renderer, enemies, renderer->camera_top_left);
     if (player != NULL && player_texture.id != 0U && level->has_player) {
         Rectangle source = eik_player_frame_rect(&player->animation);

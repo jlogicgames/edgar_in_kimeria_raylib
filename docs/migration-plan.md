@@ -428,6 +428,8 @@ platforms before any gameplay code depends on them.
    mid-animation, and it then walks back to its spawn point; the Red mob can be stomped.
 
 ### Phase 5: Items, objects, triggers
+**Status:** Complete.
+
 1. O1–O11, and `TriggerActivated` as a Flecs event observed by walls, escalators and torches.
 2. Port `tests/triggers.rs` (5 tests) against a headless world: a wall is removed by a
    matching id and not by another; an escalator toggles; a torch toggles and relights at

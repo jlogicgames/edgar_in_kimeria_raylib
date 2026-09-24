@@ -8,6 +8,7 @@
 
 #include "mod_level.h"
 #include "mod_enemy.h"
+#include "mod_items.h"
 #include "mod_player.h"
 
 typedef struct EikRenderer {
@@ -31,7 +32,8 @@ void eik_renderer_unload(EikRenderer *renderer);
 void eik_renderer_snap_camera(EikRenderer *renderer);
 void eik_renderer_update_camera(EikRenderer *renderer, const EikLevelState *level, float dt);
 void eik_renderer_draw(EikRenderer *renderer, const EikLevelState *level,
-    const EikPlayer *player, const EikEnemyWorld *enemies, Texture2D player_texture,
+    const EikPlayer *player, const EikEnemyWorld *enemies, const EikItemWorld *items,
+    Texture2D player_texture,
     bool show_collision);
 
 #endif

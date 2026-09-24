@@ -115,6 +115,7 @@ add_library(eik_level STATIC
     src/anim.c
     src/mod_player.c
     src/mod_enemy.c
+    src/mod_items.c
 )
 target_link_libraries(eik_level PUBLIC eik_collision ${EIK_RAYLIB_TARGET} flecs yxml)
 target_include_directories(eik_level PUBLIC src)
@@ -230,4 +231,8 @@ if (NOT EMSCRIPTEN AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     target_link_libraries(test_enemy PRIVATE eik_level)
     target_compile_options(test_enemy PRIVATE -Wall -Wextra -Wpedantic -Werror)
     add_test(NAME enemy COMMAND test_enemy)
+    add_executable(test_triggers tests/test_triggers.c)
+    target_link_libraries(test_triggers PRIVATE eik_level)
+    target_compile_options(test_triggers PRIVATE -Wall -Wextra -Wpedantic -Werror)
+    add_test(NAME triggers COMMAND test_triggers)
 endif()
